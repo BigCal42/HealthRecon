@@ -7,11 +7,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error("Missing Supabase environment variables");
 }
 
+const resolvedSupabaseUrl: string = supabaseUrl;
+const resolvedSupabaseAnonKey: string = supabaseAnonKey;
+
 export function createBrowserSupabaseClient() {
-  return createClient(supabaseUrl, supabaseAnonKey);
+  return createClient(resolvedSupabaseUrl, resolvedSupabaseAnonKey);
 }
 
 export function createServerSupabaseClient() {
-  return createClient(supabaseUrl, supabaseAnonKey);
+  return createClient(resolvedSupabaseUrl, resolvedSupabaseAnonKey);
 }
 

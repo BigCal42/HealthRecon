@@ -1,0 +1,5 @@
+POST http://localhost:3000/api/daily-briefing
+Content-Type: application/json
+
+{ "slug": "bilh" }
+
