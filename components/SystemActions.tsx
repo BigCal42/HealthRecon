@@ -8,8 +8,10 @@ interface SystemActionsProps {
 
 export function SystemActions({ slug }: SystemActionsProps) {
   const [status, setStatus] = useState<string>("Idle");
+  const [loading, setLoading] = useState<boolean>(false);
 
   const handleRunPipeline = async () => {
+    setLoading(true);
     setStatus("Running...");
     try {
       const res = await fetch("/api/pipeline", {
@@ -35,10 +37,13 @@ export function SystemActions({ slug }: SystemActionsProps) {
       );
     } catch (error) {
       setStatus(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleGenerateBriefing = async () => {
+    setLoading(true);
     setStatus("Running...");
     try {
       const res = await fetch("/api/daily-briefing", {
@@ -61,10 +66,13 @@ export function SystemActions({ slug }: SystemActionsProps) {
       }
     } catch (error) {
       setStatus(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleNewsIngest = async () => {
+    setLoading(true);
     setStatus("Running...");
     try {
       const res = await fetch("/api/news-ingest", {
@@ -83,10 +91,13 @@ export function SystemActions({ slug }: SystemActionsProps) {
       );
     } catch (error) {
       setStatus(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
+    } finally {
+      setLoading(false);
     }
   };
 
   const generateProfile = async () => {
+    setLoading(true);
     setStatus("Generating profile...");
     try {
       const res = await fetch("/api/system-profile", {
@@ -105,6 +116,8 @@ export function SystemActions({ slug }: SystemActionsProps) {
       setStatus("Profile generated.");
     } catch (error) {
       setStatus("Failed to generate profile.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -112,18 +125,19 @@ export function SystemActions({ slug }: SystemActionsProps) {
     <div style={{ marginTop: "2rem" }}>
       <h2>Actions</h2>
       <div style={{ marginBottom: "0.5rem" }}>
-        <button onClick={handleRunPipeline} style={{ marginRight: "0.5rem" }}>
+        <button onClick={handleRunPipeline} disabled={loading} style={{ marginRight: "0.5rem" }}>
           Run Pipeline
         </button>
-        <button onClick={handleGenerateBriefing} style={{ marginRight: "0.5rem" }}>
+        <button onClick={handleGenerateBriefing} disabled={loading} style={{ marginRight: "0.5rem" }}>
           Generate Daily Briefing
         </button>
-        <button onClick={handleNewsIngest} style={{ marginRight: "0.5rem" }}>
+        <button onClick={handleNewsIngest} disabled={loading} style={{ marginRight: "0.5rem" }}>
           Run News Ingest
         </button>
-        <button onClick={generateProfile}>Generate Profile</button>
+        <button onClick={generateProfile} disabled={loading}>Generate Profile</button>
       </div>
-      <p style={{ fontSize: "0.875rem", color: "#666" }}>{status}</p>
+      {loading && <p style={{ fontSize: "0.875rem", color: "#666" }}>Loading...</p>}
+      {!loading && <p style={{ fontSize: "0.875rem", color: "#666" }}>{status}</p>}
     </div>
   );
 }

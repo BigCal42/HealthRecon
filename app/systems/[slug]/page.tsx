@@ -83,13 +83,19 @@ const ENTITY_SECTIONS: { heading: string; key: EntityType }[] = [
 
 type SystemPageProps = {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 };
 
 export const dynamic = "force-dynamic";
 
-export default async function SystemPage({ params }: SystemPageProps) {
+export default async function SystemPage({ params, searchParams }: SystemPageProps) {
   const { slug } = await params;
+  const resolvedSearchParams = await searchParams;
   const supabase = createServerSupabaseClient();
+
+  const docPage = Number(resolvedSearchParams.documents_page ?? "1") || 1;
+  const sigPage = Number(resolvedSearchParams.signals_page ?? "1") || 1;
+  const pageSize = 20;
 
   const { data: system, error } = await supabase
     .from("systems")
@@ -122,9 +128,9 @@ export default async function SystemPage({ params }: SystemPageProps) {
     .maybeSingle<DailyBriefingRow>();
 
   const [
-    { data: documentsData },
+    { data: documentsData, count: documentsTotal },
     { data: entitiesData },
-    { data: signalsData },
+    { data: signalsData, count: signalsTotal },
     { data: newsData },
     { data: pipelineRunsData },
     { data: briefingRunsData },
@@ -132,24 +138,27 @@ export default async function SystemPage({ params }: SystemPageProps) {
   ] = await Promise.all([
     supabase
       .from("documents")
-      .select("id, title, source_url, crawled_at")
+      .select("id, title, source_url, crawled_at", { count: "exact" })
       .eq("system_id", system.id)
-      .order("crawled_at", { ascending: false }),
+      .order("crawled_at", { ascending: false })
+      .range((docPage - 1) * pageSize, docPage * pageSize - 1),
     supabase
       .from("entities")
       .select("id, type, name, role")
       .eq("system_id", system.id),
     supabase
       .from("signals")
-      .select("id, severity, category, summary, created_at, documents(source_url)")
+      .select("id, severity, category, summary, created_at, documents(source_url)", { count: "exact" })
       .eq("system_id", system.id)
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .range((sigPage - 1) * pageSize, sigPage * pageSize - 1),
     supabase
       .from("documents")
       .select("id, title, source_url, crawled_at")
       .eq("system_id", system.id)
       .eq("source_type", "news")
-      .order("crawled_at", { ascending: false }),
+      .order("crawled_at", { ascending: false })
+      .limit(20),
     supabase
       .from("pipeline_runs")
       .select("*")
@@ -203,9 +212,9 @@ export default async function SystemPage({ params }: SystemPageProps) {
   const hasEntities = entities.length > 0;
 
   // Compute System Overview metrics
-  const documentCount = documents.length;
+  const documentCount = documentsTotal ?? 0;
   const entityCount = entities.length;
-  const signalCount = signals.length;
+  const signalCount = signalsTotal ?? 0;
   const lastDocumentAt =
     documents.length > 0 && documents[0].crawled_at
       ? new Date(documents[0].crawled_at).toISOString()
@@ -326,32 +335,59 @@ export default async function SystemPage({ params }: SystemPageProps) {
         {signals.length === 0 ? (
           <p>No signals yet</p>
         ) : (
-          <ul>
-            {signals.map((signal) => {
-              const documentRelation = Array.isArray(signal.documents)
-                ? signal.documents[0]
-                : signal.documents;
-              const documentUrl = documentRelation?.source_url ?? null;
+          <>
+            <ul>
+              {signals.map((signal) => {
+                const documentRelation = Array.isArray(signal.documents)
+                  ? signal.documents[0]
+                  : signal.documents;
+                const documentUrl = documentRelation?.source_url ?? null;
 
+                return (
+                  <li key={signal.id} style={{ marginBottom: "1rem" }}>
+                    <p>Severity: {signal.severity ?? "Unknown"}</p>
+                    <p>Category: {signal.category ?? "Unknown"}</p>
+                    <p>{signal.summary ?? "No summary provided."}</p>
+                    <p>Created: {signal.created_at ?? "Unknown"}</p>
+                    {documentUrl ? (
+                      <p>
+                        <a href={documentUrl} target="_blank" rel="noopener noreferrer">
+                          Source document
+                        </a>
+                      </p>
+                    ) : (
+                      <p>No source document available.</p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            {(() => {
+              const signalsTotalPages = Math.max(1, Math.ceil((signalsTotal ?? 0) / pageSize));
               return (
-                <li key={signal.id} style={{ marginBottom: "1rem" }}>
-                  <p>Severity: {signal.severity ?? "Unknown"}</p>
-                  <p>Category: {signal.category ?? "Unknown"}</p>
-                  <p>{signal.summary ?? "No summary provided."}</p>
-                  <p>Created: {signal.created_at ?? "Unknown"}</p>
-                  {documentUrl ? (
-                    <p>
-                      <a href={documentUrl} target="_blank" rel="noopener noreferrer">
-                        Source document
+                <div style={{ marginTop: "1rem" }}>
+                  <p>
+                    Page {sigPage} of {signalsTotalPages}
+                  </p>
+                  <div>
+                    {sigPage > 1 && (
+                      <a href={`?signals_page=${sigPage - 1}&documents_page=${docPage}`}>
+                        Previous
                       </a>
-                    </p>
-                  ) : (
-                    <p>No source document available.</p>
-                  )}
-                </li>
+                    )}
+                    {sigPage < signalsTotalPages && (
+                      <>
+                        {" "}
+                        <a href={`?signals_page=${sigPage + 1}&documents_page=${docPage}`}>
+                          Next
+                        </a>
+                      </>
+                    )}
+                  </div>
+                </div>
               );
-            })}
-          </ul>
+            })()}
+          </>
         )}
       </section>
 
@@ -389,19 +425,46 @@ export default async function SystemPage({ params }: SystemPageProps) {
         {documents.length === 0 ? (
           <p>No documents yet</p>
         ) : (
-          <ul>
-            {documents.map((document) => (
-              <li key={document.id} style={{ marginBottom: "1rem" }}>
-                <p>{document.title ?? "Untitled"}</p>
-                <p>
-                  <a href={document.source_url} target="_blank" rel="noopener noreferrer">
-                    {document.source_url}
-                  </a>
-                </p>
-                <p>Crawled: {document.crawled_at ?? "Unknown"}</p>
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul>
+              {documents.map((document) => (
+                <li key={document.id} style={{ marginBottom: "1rem" }}>
+                  <p>{document.title ?? "Untitled"}</p>
+                  <p>
+                    <a href={document.source_url} target="_blank" rel="noopener noreferrer">
+                      {document.source_url}
+                    </a>
+                  </p>
+                  <p>Crawled: {document.crawled_at ?? "Unknown"}</p>
+                </li>
+              ))}
+            </ul>
+            {(() => {
+              const documentsTotalPages = Math.max(1, Math.ceil((documentsTotal ?? 0) / pageSize));
+              return (
+                <div style={{ marginTop: "1rem" }}>
+                  <p>
+                    Page {docPage} of {documentsTotalPages}
+                  </p>
+                  <div>
+                    {docPage > 1 && (
+                      <a href={`?documents_page=${docPage - 1}&signals_page=${sigPage}`}>
+                        Previous
+                      </a>
+                    )}
+                    {docPage < documentsTotalPages && (
+                      <>
+                        {" "}
+                        <a href={`?documents_page=${docPage + 1}&signals_page=${sigPage}`}>
+                          Next
+                        </a>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+          </>
         )}
       </section>
 
