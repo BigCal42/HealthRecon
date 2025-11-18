@@ -28,6 +28,8 @@ export default async function Home() {
       <p>
         <Link href="/worklist">Worklist</Link> |{" "}
         <Link href="/dashboard">View Systems Dashboard</Link> |{" "}
+        <Link href="/targets">View System Targeting</Link> |{" "}
+        <Link href="/search">Global Search</Link> |{" "}
         <Link href="/admin/systems">Admin: Manage Systems</Link>
       </p>
 

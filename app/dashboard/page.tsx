@@ -13,7 +13,10 @@ export default async function DashboardPage() {
     <main style={{ padding: "2rem" }}>
       <h1>Systems Dashboard</h1>
       <p>
-        <Link href="/">Home</Link> | <Link href="/worklist">Worklist</Link> | <Link href="/admin/systems">Admin: Manage Systems</Link>
+        <Link href="/">Home</Link> | <Link href="/worklist">Worklist</Link> |{" "}
+        <Link href="/targets">See prioritized systems</Link> |{" "}
+        <Link href="/search">Global Search</Link> |{" "}
+        <Link href="/admin/systems">Admin: Manage Systems</Link>
       </p>
       {metrics.length === 0 ? (
         <p>No systems found.</p>

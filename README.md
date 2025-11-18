@@ -15,6 +15,7 @@ Key capabilities include:
 - **System Timeline** – unified chronological history of signals, news, interactions, opportunities, and profile changes.
 - **Key Contacts & Buying Committee** – maintain structured contact lists per system with roles, seniority, and primary decision makers.
 - **System Targeting** – heuristic priority scores per system based on open opportunities, next steps, recent signals, news, and interactions.
+- **Global Search** – search across systems, documents, signals, opportunities, interactions, and contacts via a single query.
 
 ## Tech Stack
 - **Framework:** Next.js 15 (App Router, React Server Components, TypeScript)
