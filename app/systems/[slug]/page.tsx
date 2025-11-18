@@ -13,6 +13,7 @@ import { SystemProfile } from "@/components/SystemProfile";
 import { SystemAccountPlan } from "@/components/SystemAccountPlan";
 import { SystemContacts } from "@/components/SystemContacts";
 import { SystemTimeline } from "@/components/SystemTimeline";
+import { SystemMeetingPrep } from "@/components/SystemMeetingPrep";
 
 type SystemRow = {
   id: string;
@@ -269,6 +270,11 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
       <section style={{ marginTop: "2rem" }}>
         <h2>Key Contacts & Buying Committee</h2>
         <SystemContacts slug={system.slug} />
+      </section>
+
+      <section style={{ marginTop: "2rem" }}>
+        <h2>Meeting / Call Prep</h2>
+        <SystemMeetingPrep slug={system.slug} />
       </section>
 
       <section style={{ marginTop: "2rem" }}>
