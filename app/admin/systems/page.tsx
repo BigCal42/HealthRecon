@@ -3,6 +3,8 @@ import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 import { AdminSystemsClient } from "@/components/AdminSystemsClient";
 
+export const dynamic = "force-dynamic";
+
 type AdminSystemRow = {
   id: string;
   slug: string;

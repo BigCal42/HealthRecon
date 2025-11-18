@@ -1,12 +1,22 @@
 import OpenAI from "openai";
 
-const apiKey = process.env.OPENAI_API_KEY;
+function getOpenAIClient() {
+  const apiKey = process.env.OPENAI_API_KEY;
 
-if (!apiKey) {
-  throw new Error("OPENAI_API_KEY is not set");
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not set");
+  }
+
+  return new OpenAI({ apiKey });
 }
 
-export const openai = new OpenAI({ apiKey });
+export const openai = new Proxy({} as OpenAI, {
+  get(_target, prop) {
+    const client = getOpenAIClient();
+    const value = (client as any)[prop];
+    return typeof value === "function" ? value.bind(client) : value;
+  },
+});
 
 type ResponseFormat = "text" | "json_object";
 

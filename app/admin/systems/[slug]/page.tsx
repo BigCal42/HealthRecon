@@ -14,6 +14,8 @@ type AdminSystemSeedsPageProps = {
   params: Promise<{ slug: string }>;
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function AdminSystemSeedsPage({ params }: AdminSystemSeedsPageProps) {
   const { slug } = await params;
   const supabase = createServerSupabaseClient();

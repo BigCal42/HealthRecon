@@ -2,6 +2,8 @@ import Link from "next/link";
 
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
+export const dynamic = "force-dynamic";
+
 type HomeSystemRow = {
   slug: string;
   name: string;

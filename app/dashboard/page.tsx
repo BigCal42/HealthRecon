@@ -3,6 +3,8 @@ import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 import { getSystemMetrics } from "@/lib/getSystemMetrics";
 
+export const dynamic = "force-dynamic";
+
 export default async function DashboardPage() {
   const supabase = createServerSupabaseClient();
   const metrics = await getSystemMetrics(supabase);

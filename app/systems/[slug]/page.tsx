@@ -85,6 +85,8 @@ type SystemPageProps = {
   params: Promise<{ slug: string }>;
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function SystemPage({ params }: SystemPageProps) {
   const { slug } = await params;
   const supabase = createServerSupabaseClient();
