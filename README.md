@@ -9,10 +9,12 @@ Key capabilities include:
 - Rich system profiles, opportunities boards, dashboards, and comparison views to summarize each health system.
 - **Outbound Playbooks** – AI-generated system-specific outbound prep with brief, talk tracks, email openers, and next actions.
 - **Outbound Draft Composer** – one-click generation of tailored email and call drafts per system, with copy-to-clipboard.
+- **Account Plans** – structured, LLM-assisted account plans per system with editable JSON.
 - **Interaction Log** – track calls, emails, meetings, and next steps per system.
 - **Worklist View** – unified view of overdue and upcoming next steps plus recently active systems to guide daily sales focus.
 - **System Timeline** – unified chronological history of signals, news, interactions, opportunities, and profile changes.
 - **Key Contacts & Buying Committee** – maintain structured contact lists per system with roles, seniority, and primary decision makers.
+- **System Targeting** – heuristic priority scores per system based on open opportunities, next steps, recent signals, news, and interactions.
 
 ## Tech Stack
 - **Framework:** Next.js 15 (App Router, React Server Components, TypeScript)
@@ -54,6 +56,7 @@ Key capabilities include:
    - `opportunities.sql`
    - `opportunity_suggestions.sql`
    - `outbound_playbooks.sql`
+   - `account_plans.sql`
    - `run_logs.sql`
    - `system_profiles.sql`
    - `system_seeds.sql`

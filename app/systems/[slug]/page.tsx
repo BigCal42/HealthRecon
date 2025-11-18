@@ -10,6 +10,7 @@ import { SystemOpportunitySuggestions } from "@/components/SystemOpportunitySugg
 import { SystemOutboundComposer } from "@/components/SystemOutboundComposer";
 import { SystemOutboundPrep } from "@/components/SystemOutboundPrep";
 import { SystemProfile } from "@/components/SystemProfile";
+import { SystemAccountPlan } from "@/components/SystemAccountPlan";
 import { SystemContacts } from "@/components/SystemContacts";
 import { SystemTimeline } from "@/components/SystemTimeline";
 
@@ -258,6 +259,11 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
       <section style={{ marginTop: "2rem" }}>
         <h2>System Profile</h2>
         <SystemProfile slug={system.slug} />
+      </section>
+
+      <section style={{ marginTop: "2rem" }}>
+        <h2>Account Plan</h2>
+        <SystemAccountPlan slug={system.slug} />
       </section>
 
       <section style={{ marginTop: "2rem" }}>
