@@ -121,6 +121,56 @@ export function SystemActions({ slug }: SystemActionsProps) {
     }
   };
 
+  const generateOutboundPlaybook = async () => {
+    setLoading(true);
+    setStatus("Generating outbound playbook...");
+    try {
+      const res = await fetch("/api/outbound-playbook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.ok) {
+        setStatus("Failed to generate playbook.");
+        return;
+      }
+
+      setStatus("Outbound playbook generated.");
+    } catch (error) {
+      setStatus("Failed to generate playbook.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateOutboundEmail = async () => {
+    setLoading(true);
+    setStatus("Generating outbound email...");
+    try {
+      const res = await fetch("/api/outbound-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug, kind: "email" }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.ok) {
+        setStatus("Failed to generate email draft.");
+        return;
+      }
+
+      setStatus("Outbound email draft generated.");
+    } catch (error) {
+      setStatus("Failed to generate email draft.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div style={{ marginTop: "2rem" }}>
       <h2>Actions</h2>
@@ -134,7 +184,15 @@ export function SystemActions({ slug }: SystemActionsProps) {
         <button onClick={handleNewsIngest} disabled={loading} style={{ marginRight: "0.5rem" }}>
           Run News Ingest
         </button>
-        <button onClick={generateProfile} disabled={loading}>Generate Profile</button>
+        <button onClick={generateProfile} disabled={loading} style={{ marginRight: "0.5rem" }}>
+          Generate Profile
+        </button>
+        <button onClick={generateOutboundPlaybook} disabled={loading} style={{ marginRight: "0.5rem" }}>
+          Generate Outbound Playbook
+        </button>
+        <button onClick={generateOutboundEmail} disabled={loading}>
+          Generate Outbound Email
+        </button>
       </div>
       {loading && <p style={{ fontSize: "0.875rem", color: "#666" }}>Loading...</p>}
       {!loading && <p style={{ fontSize: "0.875rem", color: "#666" }}>{status}</p>}

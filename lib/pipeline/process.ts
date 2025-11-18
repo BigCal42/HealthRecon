@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createResponse } from "@/lib/openaiClient";
 import type { ExtractionResult } from "@/lib/extractionSchema";
+import { logger } from "@/lib/logger";
 
 type DocumentRow = {
   id: string;
@@ -34,7 +35,7 @@ export async function runProcessForSystem(
     .returns<DocumentRow[]>();
 
   if (error) {
-    console.error("Failed to load documents", error);
+    logger.error(error, "Failed to load documents");
     return { processed: 0 };
   }
 
@@ -85,7 +86,7 @@ export async function runProcessForSystem(
         });
 
         if (entityError) {
-          console.error("Failed to insert entity", entityError);
+          logger.error(entityError, "Failed to insert entity");
           processedSuccessfully = false;
         }
       }
@@ -101,7 +102,7 @@ export async function runProcessForSystem(
         });
 
         if (signalError) {
-          console.error("Failed to insert signal", signalError);
+          logger.error(signalError, "Failed to insert signal");
           processedSuccessfully = false;
         }
       }
@@ -116,10 +117,10 @@ export async function runProcessForSystem(
         .eq("id", doc.id);
 
       if (updateError) {
-        console.error("Failed to mark document processed", updateError);
+        logger.error(updateError, "Failed to mark document processed");
       }
     } catch (err) {
-      console.error("Failed to process document", doc.id, err);
+      logger.error(err, "Failed to process document", doc.id);
     }
   }
 

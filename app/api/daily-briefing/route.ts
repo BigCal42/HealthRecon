@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 
 import { BILH_SLUG } from "@/config/constants";
 import { getDailyInputs } from "@/lib/getDailyInputs";
+import { logger } from "@/lib/logger";
 import { createResponse } from "@/lib/openaiClient";
+import { rateLimit } from "@/lib/rateLimit";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
 type DailyBriefingPayload = {
@@ -11,6 +13,17 @@ type DailyBriefingPayload = {
 };
 
 export async function POST(request: Request) {
+  const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+  const ok = rateLimit({
+    key: `post:${ip}:${request.url}`,
+    limit: 5,
+    windowMs: 60_000,
+  });
+
+  if (!ok) {
+    logger.warn("Rate limit exceeded", { ip, url: request.url });
+    return new Response("Too Many Requests", { status: 429 });
+  }
   const supabase = createServerSupabaseClient();
 
   let slug = BILH_SLUG;
@@ -47,7 +60,7 @@ export async function POST(request: Request) {
         status: "no_recent_activity",
       });
     } catch (logError) {
-      console.error("Failed to log daily briefing run", logError);
+      logger.error(logError, "Failed to log daily briefing run");
     }
     return NextResponse.json({ created: false, reason: "no_recent_activity" });
   }
@@ -90,7 +103,7 @@ export async function POST(request: Request) {
         error_message: "model_response_missing",
       });
     } catch (logError) {
-      console.error("Failed to log daily briefing run", logError);
+      logger.error(logError, "Failed to log daily briefing run");
     }
     return NextResponse.json(
       { error: "model_response_missing" },
@@ -103,7 +116,7 @@ export async function POST(request: Request) {
   try {
     parsed = JSON.parse(rawOutput) as DailyBriefingPayload;
   } catch (error) {
-    console.error("Failed to parse model output", error, rawOutput);
+    logger.error(error, "Failed to parse model output", rawOutput);
     // Log error
     try {
       await supabase.from("daily_briefing_runs").insert({
@@ -112,7 +125,7 @@ export async function POST(request: Request) {
         error_message: `model_response_invalid: ${String(error)}`,
       });
     } catch (logError) {
-      console.error("Failed to log daily briefing run", logError);
+      logger.error(logError, "Failed to log daily briefing run");
     }
     return NextResponse.json(
       { error: "model_response_invalid" },
@@ -129,7 +142,7 @@ export async function POST(request: Request) {
         error_message: "model_response_unexpected",
       });
     } catch (logError) {
-      console.error("Failed to log daily briefing run", logError);
+      logger.error(logError, "Failed to log daily briefing run");
     }
     return NextResponse.json(
       { error: "model_response_unexpected" },
@@ -147,7 +160,7 @@ export async function POST(request: Request) {
     .maybeSingle<{ id: string }>();
 
   if (insertError || !inserted) {
-    console.error("Failed to store daily briefing", insertError);
+    logger.error(insertError, "Failed to store daily briefing");
     // Log error
     try {
       await supabase.from("daily_briefing_runs").insert({
@@ -156,7 +169,7 @@ export async function POST(request: Request) {
         error_message: `storage_failed: ${String(insertError)}`,
       });
     } catch (logError) {
-      console.error("Failed to log daily briefing run", logError);
+      logger.error(logError, "Failed to log daily briefing run");
     }
     return NextResponse.json({ error: "storage_failed" }, { status: 500 });
   }
@@ -169,7 +182,7 @@ export async function POST(request: Request) {
       briefing_id: inserted.id,
     });
   } catch (logError) {
-    console.error("Failed to log daily briefing run", logError);
+    logger.error(logError, "Failed to log daily briefing run");
   }
 
   return NextResponse.json({

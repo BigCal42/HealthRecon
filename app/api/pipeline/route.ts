@@ -1,13 +1,26 @@
 import { NextResponse } from "next/server";
 
 import { BILH_SLUG } from "@/config/constants";
+import { logger } from "@/lib/logger";
 import { runIngestForSystem } from "@/lib/pipeline/ingest";
 import { runProcessForSystem } from "@/lib/pipeline/process";
+import { rateLimit } from "@/lib/rateLimit";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
 type PipelineError = "ingest_failed" | "process_failed";
 
 export async function POST(request: Request) {
+  const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+  const ok = rateLimit({
+    key: `post:${ip}:${request.url}`,
+    limit: 5,
+    windowMs: 60_000,
+  });
+
+  if (!ok) {
+    logger.warn("Rate limit exceeded", { ip, url: request.url });
+    return new Response("Too Many Requests", { status: 429 });
+  }
   const supabase = createServerSupabaseClient();
   let slug = BILH_SLUG;
 
@@ -39,7 +52,7 @@ export async function POST(request: Request) {
     } catch (err) {
       error = "ingest_failed";
       errorMessage = String(err);
-      console.error("Pipeline ingest error", err);
+      logger.error(err, "Pipeline ingest error");
     }
 
     try {
@@ -48,7 +61,7 @@ export async function POST(request: Request) {
     } catch (err) {
       error = "process_failed";
       errorMessage = String(err);
-      console.error("Pipeline process error", err);
+      logger.error(err, "Pipeline process error");
     }
 
     const responsePayload: {
@@ -77,9 +90,11 @@ export async function POST(request: Request) {
           error_message: errorMessage ?? null,
         });
       } catch (logError) {
-        console.error("Failed to log pipeline run", logError);
+        logger.error(logError, "Failed to log pipeline run");
       }
     }
+
+    logger.info("Pipeline complete", { slug, ingest: ingestSummary, process: processSummary });
 
     return NextResponse.json(responsePayload);
   } catch (err) {
@@ -94,7 +109,7 @@ export async function POST(request: Request) {
           error_message: String(err),
         });
       } catch (logError) {
-        console.error("Failed to log pipeline run error", logError);
+        logger.error(logError, "Failed to log pipeline run error");
       }
     }
 

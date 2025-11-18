@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { hashText } from "@/lib/hash";
+import { logger } from "@/lib/logger";
 
 type FirecrawlPage = {
   url: string;
@@ -58,7 +59,7 @@ export async function runIngestForSystem(
       });
 
       if (!firecrawlRes.ok) {
-        console.error(`Firecrawl request failed for ${seed.url}`);
+        logger.error(new Error(`Firecrawl request failed for ${seed.url}`));
         continue;
       }
 
@@ -107,7 +108,7 @@ export async function runIngestForSystem(
         created.push(inserted.id);
       }
     } catch (error) {
-      console.error(`Error processing seed URL ${seed.url}:`, error);
+      logger.error(error, `Error processing seed URL ${seed.url}`);
       continue;
     }
   }

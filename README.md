@@ -4,9 +4,15 @@ HealthRecon is a minimal but production-ready intelligence layer for healthcare 
 
 Key capabilities include:
 - Automated ingestion via Firecrawl plus Supabase storage, followed by extraction and signal detection pipelines.
-- RAG-style chat that answers questions against each system’s documents and embeddings.
+- RAG-style chat that answers questions against each system's documents and embeddings.
 - Daily briefings, news ingestion, signals, opportunities, and suggested opportunities to keep teams updated.
 - Rich system profiles, opportunities boards, dashboards, and comparison views to summarize each health system.
+- **Outbound Playbooks** – AI-generated system-specific outbound prep with brief, talk tracks, email openers, and next actions.
+- **Outbound Draft Composer** – one-click generation of tailored email and call drafts per system, with copy-to-clipboard.
+- **Interaction Log** – track calls, emails, meetings, and next steps per system.
+- **Worklist View** – unified view of overdue and upcoming next steps plus recently active systems to guide daily sales focus.
+- **System Timeline** – unified chronological history of signals, news, interactions, opportunities, and profile changes.
+- **Key Contacts & Buying Committee** – maintain structured contact lists per system with roles, seniority, and primary decision makers.
 
 ## Tech Stack
 - **Framework:** Next.js 15 (App Router, React Server Components, TypeScript)
@@ -47,6 +53,7 @@ Key capabilities include:
    - `news_sources.sql`
    - `opportunities.sql`
    - `opportunity_suggestions.sql`
+   - `outbound_playbooks.sql`
    - `run_logs.sql`
    - `system_profiles.sql`
    - `system_seeds.sql`
@@ -91,6 +98,18 @@ All required keys live in `.env.local`. Copy from `.env.local.example` and suppl
 - **Thin API routes:** Keep API route handlers (`app/api/`) minimal; move business logic to `lib/` functions.
 - **Explicit environment checks:** Use explicit checks for required environment variables and fail fast if missing.
 - **Simple functions:** Favor simple, pure functions over classes. Keep functions focused and testable.
+
+## Logging & Monitoring
+
+- Server logs use a small centralized logger (`lib/logger.ts`)
+- All major pipeline routes log errors clearly
+- `/api/log-test` can be used to verify logging in Vercel
+
+## Rate Limiting
+
+- Expensive API routes use an in-memory token bucket
+- Prevents abuse and large OpenAI/Firecrawl bills
+- Limits reset automatically each window
 
 ## Deploying to Vercel
 1. Push your changes to `main` on GitHub (`https://github.com/BigCal42/HealthRecon`).

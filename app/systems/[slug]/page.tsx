@@ -4,9 +4,14 @@ import type { EntityType } from "@/lib/types";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 import { SystemActions } from "@/components/SystemActions";
 import { SystemChat } from "@/components/SystemChat";
+import { SystemInteractions } from "@/components/SystemInteractions";
 import { SystemOpportunities } from "@/components/SystemOpportunities";
 import { SystemOpportunitySuggestions } from "@/components/SystemOpportunitySuggestions";
+import { SystemOutboundComposer } from "@/components/SystemOutboundComposer";
+import { SystemOutboundPrep } from "@/components/SystemOutboundPrep";
 import { SystemProfile } from "@/components/SystemProfile";
+import { SystemContacts } from "@/components/SystemContacts";
+import { SystemTimeline } from "@/components/SystemTimeline";
 
 type SystemRow = {
   id: string;
@@ -256,6 +261,21 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
       </section>
 
       <section style={{ marginTop: "2rem" }}>
+        <h2>Key Contacts & Buying Committee</h2>
+        <SystemContacts slug={system.slug} />
+      </section>
+
+      <section style={{ marginTop: "2rem" }}>
+        <h2>Outbound Prep & Playbook</h2>
+        <SystemOutboundPrep slug={system.slug} />
+      </section>
+
+      <section style={{ marginTop: "2rem" }}>
+        <h2>Outbound Draft Composer</h2>
+        <SystemOutboundComposer slug={system.slug} />
+      </section>
+
+      <section style={{ marginTop: "2rem" }}>
         <h2>News</h2>
         {news.length === 0 ? (
           <p>No news yet.</p>
@@ -283,6 +303,13 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
       <section style={{ marginTop: "2rem" }}>
         <h2>Opportunities</h2>
         <SystemOpportunities slug={system.slug} />
+      </section>
+
+      <SystemTimeline systemId={system.id} />
+
+      <section style={{ marginTop: "2rem" }}>
+        <h2>Interaction Log</h2>
+        <SystemInteractions slug={system.slug} />
       </section>
 
       <section style={{ marginTop: "2rem" }}>

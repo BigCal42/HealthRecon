@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { logger } from "@/lib/logger";
 import { createResponse, openai } from "@/lib/openaiClient";
+import { rateLimit } from "@/lib/rateLimit";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
 type DocumentMatch = {
@@ -12,6 +14,18 @@ type DocumentMatch = {
 };
 
 export async function POST(request: Request) {
+  const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+  const ok = rateLimit({
+    key: `post:${ip}:${request.url}`,
+    limit: 5,
+    windowMs: 60_000,
+  });
+
+  if (!ok) {
+    logger.warn("Rate limit exceeded", { ip, url: request.url });
+    return new Response("Too Many Requests", { status: 429 });
+  }
+
   try {
     const body = (await request.json()) as { slug?: string; question?: string };
 
@@ -54,7 +68,7 @@ export async function POST(request: Request) {
     );
 
     if (rpcError) {
-      console.error("RPC error", rpcError);
+      logger.error(rpcError, "RPC error");
       return NextResponse.json(
         { error: "chat_failed" },
         { status: 500 },
@@ -110,7 +124,7 @@ export async function POST(request: Request) {
       })),
     });
   } catch (error) {
-    console.error("Chat error:", error);
+    logger.error(error, "Chat error");
     return NextResponse.json({ error: "chat_failed" }, { status: 500 });
   }
 }

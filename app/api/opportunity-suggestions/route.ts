@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { getSuggestionInputs } from "@/lib/getSuggestionInputs";
+import { logger } from "@/lib/logger";
 import { createResponse } from "@/lib/openaiClient";
+import { rateLimit } from "@/lib/rateLimit";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
 type SuggestionModelOutput = {
@@ -15,6 +17,18 @@ type SuggestionModelOutput = {
 const MAX_ARTICLE_CHARS = 1000;
 
 export async function POST(request: Request) {
+  const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+  const ok = rateLimit({
+    key: `post:${ip}:${request.url}`,
+    limit: 5,
+    windowMs: 60_000,
+  });
+
+  if (!ok) {
+    logger.warn("Rate limit exceeded", { ip, url: request.url });
+    return new Response("Too Many Requests", { status: 429 });
+  }
+
   try {
     const supabase = createServerSupabaseClient();
 
@@ -69,7 +83,7 @@ export async function POST(request: Request) {
       (response as any)?.output?.[0]?.content?.[0]?.text;
 
     if (!rawOutput) {
-      console.error("Opportunity suggestion model returned no output");
+      logger.error(new Error("Opportunity suggestion model returned no output"));
       return NextResponse.json({ error: "model_failure" }, { status: 502 });
     }
 
@@ -78,7 +92,7 @@ export async function POST(request: Request) {
     try {
       parsed = JSON.parse(rawOutput) as SuggestionModelOutput;
     } catch (error) {
-      console.error("Failed to parse suggestion output", error, rawOutput);
+      logger.error(error, "Failed to parse suggestion output", rawOutput);
       return NextResponse.json({ error: "model_failure" }, { status: 502 });
     }
 
@@ -103,7 +117,7 @@ export async function POST(request: Request) {
         });
 
       if (insertError) {
-        console.error("Failed to insert suggestion", insertError);
+        logger.error(insertError, "Failed to insert suggestion");
         continue;
       }
 
@@ -112,7 +126,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ created });
   } catch (error) {
-    console.error("Opportunity suggestions POST error", error);
+    logger.error(error, "Opportunity suggestions POST error");
     return NextResponse.json({ error: "model_failure" }, { status: 500 });
   }
 }
@@ -146,13 +160,13 @@ export async function GET(request: Request) {
       .limit(20);
 
     if (suggestionsError) {
-      console.error("Failed to fetch opportunity suggestions", suggestionsError);
+      logger.error(suggestionsError, "Failed to fetch opportunity suggestions");
       return NextResponse.json({ error: "fetch_failed" }, { status: 500 });
     }
 
     return NextResponse.json({ suggestions: suggestions ?? [] });
   } catch (error) {
-    console.error("Opportunity suggestions GET error", error);
+    logger.error(error, "Opportunity suggestions GET error");
     return NextResponse.json({ error: "unexpected_error" }, { status: 500 });
   }
 }

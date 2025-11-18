@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { BILH_SLUG } from "@/config/constants";
+import { logger } from "@/lib/logger";
 import { runIngestForSystem } from "@/lib/pipeline/ingest";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ slug, created: result.created });
   } catch (error) {
-    console.error("Ingestion error:", error);
+    logger.error(error, "Ingestion error");
     const errorMessage = error instanceof Error ? error.message : "Unexpected server error";
 
     if (errorMessage === "System not found") {

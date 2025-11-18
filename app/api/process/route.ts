@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { BILH_SLUG } from "@/config/constants";
+import { logger } from "@/lib/logger";
 import { runProcessForSystem } from "@/lib/pipeline/process";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ slug, processed: result.processed });
   } catch (error) {
-    console.error("Processing error:", error);
+    logger.error(error, "Processing error");
     return NextResponse.json({ processed: 0 });
   }
 }

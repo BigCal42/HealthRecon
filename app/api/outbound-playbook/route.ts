@@ -1,19 +1,16 @@
 import { NextResponse } from "next/server";
 
-import { getSystemProfileContext } from "@/lib/getSystemProfileContext";
+import { getOutboundContext } from "@/lib/getOutboundContext";
 import { logger } from "@/lib/logger";
 import { createResponse } from "@/lib/openaiClient";
 import { rateLimit } from "@/lib/rateLimit";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
-type SystemProfilePayload = {
-  executive_summary: string;
-  key_leadership: string[];
-  strategic_priorities: string[];
-  technology_landscape: string[];
-  recent_signals: string[];
-  opportunities_summary: string[];
-  risk_factors: string[];
+type OutboundPlaybookPayload = {
+  outbound_brief: string;
+  call_talk_tracks: string[];
+  email_openers: string[];
+  next_actions: string[];
 };
 
 export async function POST(request: Request) {
@@ -29,9 +26,9 @@ export async function POST(request: Request) {
     return new Response("Too Many Requests", { status: 429 });
   }
 
-  try {
-    const supabase = createServerSupabaseClient();
+  const supabase = createServerSupabaseClient();
 
+  try {
     const body = (await request.json()) as { slug?: string };
 
     if (!body.slug) {
@@ -43,9 +40,9 @@ export async function POST(request: Request) {
 
     const { data: system, error: systemError } = await supabase
       .from("systems")
-      .select("id, slug, name, website")
+      .select("id, slug, name")
       .eq("slug", body.slug)
-      .maybeSingle<{ id: string; slug: string; name: string; website: string | null }>();
+      .maybeSingle<{ id: string; slug: string; name: string }>();
 
     if (systemError || !system) {
       return NextResponse.json(
@@ -54,65 +51,75 @@ export async function POST(request: Request) {
       );
     }
 
-    const context = await getSystemProfileContext(supabase, system.id);
+    const context = await getOutboundContext(supabase, system.id);
 
-    // Build compact context for the model
-    const signalSummaries = context.signals.map(
+    // Build compact model input
+    const systemInfo = [
+      `System: ${context.system.name}`,
+      context.system.hq_city && context.system.hq_state
+        ? `Location: ${context.system.hq_city}, ${context.system.hq_state}`
+        : "",
+      context.system.website ? `Website: ${context.system.website}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const signalLines = context.signals.map(
       (signal) =>
-        `[${signal.category ?? "unknown"}] (${signal.severity ?? "unknown"}) ${signal.summary ?? ""}`,
+        `- [${signal.category ?? "unknown"}] (${signal.severity ?? "unknown"}) ${signal.summary ?? ""}`,
     );
 
-    const entitySummaries = context.entities.map(
-      (entity) => `${entity.name} (${entity.type}${entity.role ? ` - ${entity.role}` : ""})`,
-    );
-
-    const newsSummaries = context.news.map((article) => {
+    const newsLines = context.news.map((article) => {
       const truncatedText =
         (article.raw_text ?? "").length > 500
           ? (article.raw_text ?? "").substring(0, 500) + "..."
           : article.raw_text ?? "";
-      return `${article.title ?? "Untitled"}: ${truncatedText}`;
+      return `- ${article.title ?? "Untitled"}: ${truncatedText}`;
     });
 
-    const opportunitySummaries = context.opportunities.map(
-      (opp) => `${opp.title} (${opp.status})`,
+    const opportunityLines = context.opportunities.map(
+      (opp) => `- ${opp.title ?? "Untitled"}: ${opp.description ?? "No description"}`,
     );
 
-    let briefingNarrative = "";
-    if (context.briefing?.summary) {
+    let profileContext = "";
+    if (context.profile?.summary) {
       try {
-        const parsedBriefing = JSON.parse(context.briefing.summary) as {
-          narrative?: string;
+        const profileSummary = context.profile.summary as {
+          executive_summary?: string;
+          strategic_priorities?: string[];
         };
-        briefingNarrative = parsedBriefing.narrative ?? "";
+        const execSummary = profileSummary.executive_summary ?? "";
+        const priorities =
+          Array.isArray(profileSummary.strategic_priorities)
+            ? profileSummary.strategic_priorities.join(", ")
+            : "";
+        profileContext = [
+          execSummary ? `Executive Summary: ${execSummary}` : "",
+          priorities ? `Strategic Priorities: ${priorities}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
       } catch {
         // Ignore parsing errors
       }
     }
 
     const prompt = [
-      "You generate a structured knowledge profile of a healthcare system. Output valid JSON only.",
-      `System Name: ${system.name}`,
-      system.website ? `Website: ${system.website}` : "",
-      "Signals:",
-      signalSummaries.length > 0 ? signalSummaries.join("\n") : "- None",
-      "Entities:",
-      entitySummaries.length > 0 ? entitySummaries.join("\n") : "- None",
+      "You are a healthcare IT sales strategist. Based on the context for a single health system, generate a structured outbound prep playbook for a seller. Output valid JSON only.",
+      systemInfo,
+      "Recent Signals:",
+      signalLines.length > 0 ? signalLines.join("\n") : "- None",
       "Recent News:",
-      newsSummaries.length > 0 ? newsSummaries.join("\n\n") : "- None",
+      newsLines.length > 0 ? newsLines.join("\n\n") : "- None",
       "Open Opportunities:",
-      opportunitySummaries.length > 0 ? opportunitySummaries.join("\n") : "- None",
-      "Latest Briefing Narrative:",
-      briefingNarrative || "- None",
+      opportunityLines.length > 0 ? opportunityLines.join("\n") : "- None",
+      profileContext ? `System Profile:\n${profileContext}` : "",
       "Generate a JSON object with the following structure:",
       JSON.stringify({
-        executive_summary: "string",
-        key_leadership: ["string"],
-        strategic_priorities: ["string"],
-        technology_landscape: ["string"],
-        recent_signals: ["string"],
-        opportunities_summary: ["string"],
-        risk_factors: ["string"],
+        outbound_brief: "string (2-4 paragraphs)",
+        call_talk_tracks: ["string (1-3 concise bullets/paragraphs)"],
+        email_openers: ["string (1-3 suggested email openings)"],
+        next_actions: ["string (concrete, actionable steps)"],
       }),
     ]
       .filter(Boolean)
@@ -128,16 +135,17 @@ export async function POST(request: Request) {
       (response as any)?.output?.[0]?.content?.[0]?.text;
 
     if (!rawOutput) {
+      logger.error("Model response missing", { systemId: system.id });
       return NextResponse.json(
         { ok: false, error: "model_failure" },
         { status: 502 },
       );
     }
 
-    let parsed: SystemProfilePayload;
+    let parsed: OutboundPlaybookPayload;
 
     try {
-      parsed = JSON.parse(rawOutput) as SystemProfilePayload;
+      parsed = JSON.parse(rawOutput) as OutboundPlaybookPayload;
     } catch (error) {
       logger.error(error, "Failed to parse model output", rawOutput);
       return NextResponse.json(
@@ -148,14 +156,12 @@ export async function POST(request: Request) {
 
     // Validate structure
     if (
-      typeof parsed.executive_summary !== "string" ||
-      !Array.isArray(parsed.key_leadership) ||
-      !Array.isArray(parsed.strategic_priorities) ||
-      !Array.isArray(parsed.technology_landscape) ||
-      !Array.isArray(parsed.recent_signals) ||
-      !Array.isArray(parsed.opportunities_summary) ||
-      !Array.isArray(parsed.risk_factors)
+      typeof parsed.outbound_brief !== "string" ||
+      !Array.isArray(parsed.call_talk_tracks) ||
+      !Array.isArray(parsed.email_openers) ||
+      !Array.isArray(parsed.next_actions)
     ) {
+      logger.error("Invalid playbook structure", parsed);
       return NextResponse.json(
         { ok: false, error: "model_failure" },
         { status: 502 },
@@ -163,30 +169,30 @@ export async function POST(request: Request) {
     }
 
     const { data: inserted, error: insertError } = await supabase
-      .from("system_profiles")
+      .from("outbound_playbooks")
       .insert({
         system_id: system.id,
         summary: parsed,
       })
-      .select("id")
-      .maybeSingle<{ id: string }>();
+      .select("*")
+      .single<{ id: string }>();
 
     if (insertError || !inserted) {
-      logger.error(insertError, "Failed to store system profile");
+      logger.error(insertError, "Failed to store outbound playbook");
       return NextResponse.json(
-        { ok: false, error: "model_failure" },
+        { ok: false, error: "storage_failed" },
         { status: 500 },
       );
     }
 
     return NextResponse.json({
       ok: true,
-      profileId: inserted.id,
+      playbookId: inserted.id,
     });
   } catch (error) {
-    logger.error(error, "System profile generation error");
+    logger.error(error, "Outbound playbook generation error");
     return NextResponse.json(
-      { ok: false, error: "model_failure" },
+      { ok: false, error: "unexpected_error" },
       { status: 500 },
     );
   }
@@ -219,8 +225,8 @@ export async function GET(request: Request) {
       );
     }
 
-    const { data: profile, error: profileError } = await supabase
-      .from("system_profiles")
+    const { data: playbook, error: playbookError } = await supabase
+      .from("outbound_playbooks")
       .select("*")
       .eq("system_id", system.id)
       .order("created_at", { ascending: false })
@@ -228,21 +234,21 @@ export async function GET(request: Request) {
       .maybeSingle<{
         id: string;
         system_id: string;
-        summary: SystemProfilePayload;
+        summary: OutboundPlaybookPayload;
         created_at: string;
       }>();
 
-    if (profileError) {
-      logger.error(profileError, "Failed to fetch system profile");
+    if (playbookError) {
+      logger.error(playbookError, "Failed to fetch outbound playbook");
       return NextResponse.json(
         { error: "fetch_failed" },
         { status: 500 },
       );
     }
 
-    return NextResponse.json({ profile: profile ?? null });
+    return NextResponse.json({ playbook: playbook ?? null });
   } catch (error) {
-    logger.error(error, "System profile fetch error");
+    logger.error(error, "Outbound playbook fetch error");
     return NextResponse.json(
       { error: "unexpected_error" },
       { status: 500 },
