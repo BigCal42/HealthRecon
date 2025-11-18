@@ -83,3 +83,16 @@ All required keys live in `.env.local`. Copy from `.env.local.example` and suppl
 
 Once deployed, confirm `/systems/[slug]`, `/dashboard`, and `/compare` load successfully and that Supabase + OpenAI credentials are active.
 
+### Post-deploy checklist (Vercel)
+
+* Visit `/health` – verify:
+  * `ok: true`
+  * `supabase: "ok"`
+  * `openaiConfigured: true`
+  * `firecrawlConfigured: true` (if you intend to use crawling)
+* Visit `/dashboard` – confirm systems load
+* Visit `/systems/<slug>` – confirm:
+  * Overview renders
+  * Actions don't error
+  * Chat returns an answer
+
