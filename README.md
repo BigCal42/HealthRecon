@@ -72,6 +72,8 @@ All required keys live in `.env.local`. Copy from `.env.local.example` and suppl
 - `npm run dev` – Start the local Next.js dev server.
 - `npm run lint` – ESLint via `next lint`.
 - `npm run type-check` – TypeScript compiler in `--noEmit` mode.
+- `npm run test` – Run the Vitest unit suite once.
+- `npm run test:watch` – Run the Vitest suite in watch mode.
 - `npm run build` – Production build (used locally + by Vercel).
 
 ## Code Style & Architecture

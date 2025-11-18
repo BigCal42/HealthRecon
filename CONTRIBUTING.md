@@ -56,10 +56,11 @@ Always run these commands before pushing your changes:
 ```bash
 npm run lint
 npm run type-check
+npm run test
 npm run build
 ```
 
-The CI pipeline enforces these same checks on GitHub, so catching issues locally saves time.
+The CI pipeline enforces this exact sequence (lint → type-check → test → build) on every push and pull request, so catching issues locally saves time.
 
 ## Code Style
 
