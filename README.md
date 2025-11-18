@@ -74,6 +74,22 @@ All required keys live in `.env.local`. Copy from `.env.local.example` and suppl
 - `npm run type-check` – TypeScript compiler in `--noEmit` mode.
 - `npm run build` – Production build (used locally + by Vercel).
 
+## Code Style & Architecture
+
+### Directory Structure
+- `app/` → Next.js App Router routes and API endpoints (`app/api/` for server-side handlers)
+- `components/` → React components (client islands marked with `'use client'`)
+- `lib/` → Supabase/OpenAI/pipeline helpers, domain logic, and shared utilities
+- `config/` → Constants and configuration
+- `supabase/` → SQL schema files and migrations
+- `scripts/` → Development and testing scripts (e.g., `.http` files for API testing)
+
+### Style Guidelines
+- **Server components first:** Prefer server components by default; use client components only when interactivity is required.
+- **Thin API routes:** Keep API route handlers (`app/api/`) minimal; move business logic to `lib/` functions.
+- **Explicit environment checks:** Use explicit checks for required environment variables and fail fast if missing.
+- **Simple functions:** Favor simple, pure functions over classes. Keep functions focused and testable.
+
 ## Deploying to Vercel
 1. Push your changes to `main` on GitHub (`https://github.com/BigCal42/HealthRecon`).
 2. Connect the repo to Vercel and select the default Next.js build target.
