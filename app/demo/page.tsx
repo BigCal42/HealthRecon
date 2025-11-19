@@ -65,6 +65,10 @@ export default async function DemoPage({ searchParams }: DemoPageProps) {
           |{" "}
           <Link href={`/systems/${data.system.slug}/meeting-prep`}>
             Generate meeting prep for this system
+          </Link>{" "}
+          |{" "}
+          <Link href={`/systems/${data.system.slug}/chat`}>
+            Ask questions about this system
           </Link>
         </p>
       </section>

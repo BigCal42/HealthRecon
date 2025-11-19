@@ -6,7 +6,6 @@ import { createServerSupabaseClient } from "@/lib/supabaseClient";
 import { UICopy } from "@/lib/uiCopy";
 import Link from "next/link";
 import { SystemActions } from "@/components/SystemActions";
-import { SystemChat } from "@/components/SystemChat";
 import { SystemInteractions } from "@/components/SystemInteractions";
 import { SystemOpportunities } from "@/components/SystemOpportunities";
 import { SystemOpportunitySuggestions } from "@/components/SystemOpportunitySuggestions";
@@ -272,6 +271,9 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
             <Link href={`/systems/${system.slug}/meeting-prep`}>Meeting Prep</Link>
           </li>
           <li>
+            <Link href={`/systems/${system.slug}/chat`}>Chat</Link>
+          </li>
+          <li>
             <Link href={`/systems/${system.slug}/ingestion`}>Ingestion</Link>
           </li>
           <li>
@@ -419,8 +421,6 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
           <p>No daily briefing runs yet.</p>
         )}
       </section>
-
-      <SystemChat slug={system.slug} />
 
       {briefingBullets && briefingNarrative && (
         <section style={{ marginTop: "2rem" }}>
