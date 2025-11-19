@@ -26,6 +26,7 @@ export default async function Home() {
       <h1>HealthRecon</h1>
       <p>Personal intelligence layer for healthcare systems.</p>
       <p>
+        <Link href="/focus">Today&apos;s Focus</Link> |{" "}
         <Link href="/worklist">Worklist</Link> |{" "}
         <Link href="/dashboard">View Systems Dashboard</Link> |{" "}
         <Link href="/targets">View System Targeting</Link> |{" "}
