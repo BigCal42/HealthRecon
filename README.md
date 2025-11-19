@@ -19,6 +19,8 @@ Key capabilities include:
 - **System Targeting** – heuristic priority scores per system based on open opportunities, next steps, recent signals, news, and interactions.
 - **Global Search** – search across systems, documents, signals, opportunities, interactions, and contacts via a single query.
 - **Daily Sales Briefings** – cross-system daily summary of signals, news, opportunities, interactions, and recommended focus.
+- **System Health Scores** – composite, explainable account health metrics based on engagement, pipeline, signals, and risk.
+- **Living System Narrative** – AI-generated rolling strategic narrative synthesizing signals, news, opportunities, interactions, and account strategy.
 
 ## Tech Stack
 - **Framework:** Next.js 15 (App Router, React Server Components, TypeScript)

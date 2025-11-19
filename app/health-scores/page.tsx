@@ -1,78 +1,82 @@
 import Link from "next/link";
 
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
-import { getSystemMetrics } from "@/lib/getSystemMetrics";
+import { getSystemHealthScores } from "@/lib/getSystemHealthScore";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+export default async function HealthScoresPage() {
   const supabase = createServerSupabaseClient();
-  const metrics = await getSystemMetrics(supabase);
+  const scores = await getSystemHealthScores(supabase);
 
   return (
     <main style={{ padding: "2rem" }}>
-      <h1>Systems Dashboard</h1>
-      <p>
-        <Link href="/">Home</Link> | <Link href="/worklist">Worklist</Link> |{" "}
-        <Link href="/targets">See prioritized systems</Link> |{" "}
-        <Link href="/search">Global Search</Link> |{" "}
-        <Link href="/health-scores">System Health Scores</Link> |{" "}
-        <Link href="/admin/systems">Admin: Manage Systems</Link>
-      </p>
-      {metrics.length === 0 ? (
+      <h1>System Health Scores</h1>
+      <p>Composite, explainable account health metrics per system.</p>
+      {scores.length === 0 ? (
         <p>No systems found.</p>
       ) : (
-        <table style={{ borderCollapse: "collapse", width: "100%" }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", marginTop: "1rem" }}>
           <thead>
             <tr>
               <th style={{ border: "1px solid #ddd", padding: "0.5rem", textAlign: "left" }}>
                 System
               </th>
               <th style={{ border: "1px solid #ddd", padding: "0.5rem", textAlign: "left" }}>
-                Slug
+                Band
               </th>
               <th style={{ border: "1px solid #ddd", padding: "0.5rem", textAlign: "right" }}>
-                Documents
+                Score
+              </th>
+              <th style={{ border: "1px solid #ddd", padding: "0.5rem", textAlign: "right" }}>
+                Engagement
+              </th>
+              <th style={{ border: "1px solid #ddd", padding: "0.5rem", textAlign: "right" }}>
+                Opportunities
               </th>
               <th style={{ border: "1px solid #ddd", padding: "0.5rem", textAlign: "right" }}>
                 Signals
               </th>
               <th style={{ border: "1px solid #ddd", padding: "0.5rem", textAlign: "right" }}>
-                Opportunities
+                Risk
               </th>
               <th style={{ border: "1px solid #ddd", padding: "0.5rem", textAlign: "left" }}>
-                Last Pipeline Run
-              </th>
-              <th style={{ border: "1px solid #ddd", padding: "0.5rem", textAlign: "left" }}>
-                Last Daily Briefing
+                Reasons
               </th>
             </tr>
           </thead>
           <tbody>
-            {metrics.map((m) => (
-              <tr key={m.id}>
+            {scores.map((s) => (
+              <tr key={s.systemId}>
                 <td style={{ border: "1px solid #ddd", padding: "0.5rem" }}>
-                  <Link href={`/systems/${m.slug}`}>{m.name}</Link>
+                  <Link href={`/systems/${s.slug}`}>{s.name}</Link>
                 </td>
-                <td style={{ border: "1px solid #ddd", padding: "0.5rem" }}>{m.slug}</td>
+                <td style={{ border: "1px solid #ddd", padding: "0.5rem" }}>{s.band}</td>
                 <td style={{ border: "1px solid #ddd", padding: "0.5rem", textAlign: "right" }}>
-                  {m.documentCount}
-                </td>
-                <td style={{ border: "1px solid #ddd", padding: "0.5rem", textAlign: "right" }}>
-                  {m.signalCount}
+                  {s.overallScore}
                 </td>
                 <td style={{ border: "1px solid #ddd", padding: "0.5rem", textAlign: "right" }}>
-                  {m.opportunityCount}
+                  {s.components.engagementScore}
+                </td>
+                <td style={{ border: "1px solid #ddd", padding: "0.5rem", textAlign: "right" }}>
+                  {s.components.opportunityScore}
+                </td>
+                <td style={{ border: "1px solid #ddd", padding: "0.5rem", textAlign: "right" }}>
+                  {s.components.signalScore}
+                </td>
+                <td style={{ border: "1px solid #ddd", padding: "0.5rem", textAlign: "right" }}>
+                  {s.components.riskScore}
                 </td>
                 <td style={{ border: "1px solid #ddd", padding: "0.5rem" }}>
-                  {m.lastPipelineRunAt
-                    ? new Date(m.lastPipelineRunAt).toLocaleString()
-                    : "N/A"}
-                </td>
-                <td style={{ border: "1px solid #ddd", padding: "0.5rem" }}>
-                  {m.lastDailyBriefingAt
-                    ? new Date(m.lastDailyBriefingAt).toLocaleString()
-                    : "N/A"}
+                  {s.reasons.length === 0 ? (
+                    "-"
+                  ) : (
+                    <ul style={{ margin: 0, paddingLeft: "1.5rem" }}>
+                      {s.reasons.map((r, i) => (
+                        <li key={i}>{r}</li>
+                      ))}
+                    </ul>
+                  )}
                 </td>
               </tr>
             ))}

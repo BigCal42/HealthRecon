@@ -15,6 +15,8 @@ import { SystemContacts } from "@/components/SystemContacts";
 import { SystemTimeline } from "@/components/SystemTimeline";
 import { SystemMeetingPrep } from "@/components/SystemMeetingPrep";
 import { SystemSignalActions } from "@/components/SystemSignalActions";
+import { SystemNarrative } from "@/components/SystemNarrative";
+import { getSingleSystemHealthScore } from "@/lib/getSingleSystemHealthScore";
 
 type SystemRow = {
   id: string;
@@ -126,6 +128,8 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
       </div>
     );
   }
+
+  const health = await getSingleSystemHealthScore(supabase, system.id);
 
   const { data: briefing } = await supabase
     .from("daily_briefings")
@@ -247,6 +251,37 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
       )}
 
       <section style={{ marginTop: "2rem" }}>
+        <h2>System Health</h2>
+        {health ? (
+          <div>
+            <p>
+              <strong>Band:</strong> {health.band} |{" "}
+              <strong>Score:</strong> {health.overallScore}
+            </p>
+            <p>Components:</p>
+            <ul>
+              <li>Engagement: {health.components.engagementScore}</li>
+              <li>Opportunities: {health.components.opportunityScore}</li>
+              <li>Signals: {health.components.signalScore}</li>
+              <li>Risk: {health.components.riskScore}</li>
+            </ul>
+            {health.reasons.length > 0 && (
+              <>
+                <p>Why:</p>
+                <ul>
+                  {health.reasons.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        ) : (
+          <p>No health score available.</p>
+        )}
+      </section>
+
+      <section style={{ marginTop: "2rem" }}>
         <h2>System Overview</h2>
         <ul>
           <li>Total documents: {documentCount}</li>
@@ -266,6 +301,11 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
       <section style={{ marginTop: "2rem" }}>
         <h2>Account Plan</h2>
         <SystemAccountPlan slug={system.slug} />
+      </section>
+
+      <section style={{ marginTop: "2rem" }}>
+        <h2>Living System Narrative</h2>
+        <SystemNarrative slug={system.slug} />
       </section>
 
       <section style={{ marginTop: "2rem" }}>
