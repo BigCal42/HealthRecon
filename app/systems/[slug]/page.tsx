@@ -1,5 +1,6 @@
 import { BILH_SLUG } from "@/config/constants";
 import { groupBy } from "@/lib/groupBy";
+import { logger } from "@/lib/logger";
 import type { EntityType } from "@/lib/types";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 import { SystemActions } from "@/components/SystemActions";
@@ -208,7 +209,7 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
         narrative?: unknown;
       };
     } catch (parseError) {
-      console.error("Failed to parse daily briefing summary", parseError);
+      logger.error(parseError, "Failed to parse daily briefing summary");
     }
   }
 

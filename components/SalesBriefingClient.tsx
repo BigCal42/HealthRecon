@@ -2,12 +2,31 @@
 
 import { useEffect, useState } from "react";
 
+type SalesBriefing = {
+  id: string;
+  generated_for_date: string;
+  summary: {
+    headline?: string;
+    date_label?: string;
+    portfolio_summary?: string[];
+    system_summaries?: Array<{
+      system_slug?: string;
+      system_name?: string;
+      key_points?: string[];
+      suggested_focus?: string[];
+    }>;
+    suggested_todays_focus?: string[];
+    risks_or_watch_items?: string[];
+  };
+  created_at: string;
+};
+
 export function SalesBriefingClient() {
   const [date, setDate] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [briefing, setBriefing] = useState<any | null>(null);
+  const [briefing, setBriefing] = useState<SalesBriefing | null>(null);
 
   useEffect(() => {
     // Fetch latest briefing on mount
@@ -143,7 +162,7 @@ export function SalesBriefingClient() {
 
           <h3>Systems</h3>
           {briefing.summary?.system_summaries?.map(
-            (s: any, i: number) => (
+            (s, i: number) => (
               <div key={i} style={{ marginBottom: "2rem" }}>
                 <h4>
                   {s.system_name}{" "}

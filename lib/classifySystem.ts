@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { createResponse } from "@/lib/openaiClient";
+import { logger } from "@/lib/logger";
+import { createResponse, extractTextFromResponse } from "@/lib/openaiClient";
 
 export async function classifySystem(
   text: string,
@@ -35,9 +36,7 @@ export async function classifySystem(
       format: "json_object",
     });
 
-    const jsonText =
-      (response as any)?.output_text ??
-      (response as any)?.output?.[0]?.content?.[0]?.text;
+    const jsonText = extractTextFromResponse(response);
 
     if (!jsonText) {
       return null;
@@ -55,7 +54,7 @@ export async function classifySystem(
 
     return isValidSlug ? slug : null;
   } catch (error) {
-    console.error("Classification error:", error);
+    logger.error(error, "Classification error");
     return null;
   }
 }

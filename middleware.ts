@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import { logger } from "@/lib/logger";
+
 const ADMIN_PREFIXES = ["/admin", "/api/admin"];
 
 export function middleware(req: NextRequest) {
@@ -22,7 +24,7 @@ export function middleware(req: NextRequest) {
   const token = process.env.ADMIN_TOKEN;
 
   if (!token) {
-    console.error("ADMIN_TOKEN is not set");
+    logger.error(new Error("ADMIN_TOKEN is not set"), "Admin configuration error");
     return new NextResponse("Admin configuration error", { status: 500 });
   }
 

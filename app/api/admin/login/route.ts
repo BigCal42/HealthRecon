@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { logger } from "@/lib/logger";
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
@@ -40,7 +42,7 @@ export async function POST(request: Request) {
 
     return response;
   } catch (error) {
-    console.error("Login API error:", error);
+    logger.error(error, "Login API error");
     return NextResponse.json(
       { ok: false, error: "unexpected_error" },
       { status: 500 },

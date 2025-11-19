@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { logger } from "@/lib/logger";
-import { createResponse, openai } from "@/lib/openaiClient";
+import { createResponse, extractTextFromResponse, openai } from "@/lib/openaiClient";
 import { rateLimit } from "@/lib/rateLimit";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
@@ -13,7 +13,7 @@ type DocumentMatch = {
   similarity: number;
 };
 
-export async function POST(request: Request) {
+export async function POST(request: Request): Promise<NextResponse> {
   const ip = request.headers.get("x-forwarded-for") ?? "unknown";
   const ok = rateLimit({
     key: `post:${ip}:${request.url}`,
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
 
   if (!ok) {
     logger.warn("Rate limit exceeded", { ip, url: request.url });
-    return new Response("Too Many Requests", { status: 429 });
+    return NextResponse.json({ error: "too_many_requests" }, { status: 429 });
   }
 
   try {
@@ -103,9 +103,7 @@ export async function POST(request: Request) {
 
     const response = await createResponse({ prompt });
 
-    const rawOutput =
-      (response as any)?.output_text ??
-      (response as any)?.output?.[0]?.content?.[0]?.text;
+    const rawOutput = extractTextFromResponse(response);
 
     if (!rawOutput) {
       return NextResponse.json(

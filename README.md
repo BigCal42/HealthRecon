@@ -20,7 +20,39 @@ Key capabilities include:
 - **Global Search** – search across systems, documents, signals, opportunities, interactions, and contacts via a single query.
 - **Daily Sales Briefings** – cross-system daily summary of signals, news, opportunities, interactions, and recommended focus.
 - **System Health Scores** – composite, explainable account health metrics based on engagement, pipeline, signals, and risk.
+- **Cross-System Comparative Intelligence** – compare any two health systems across signals, technology, opportunities, engagement, and overall health.
+- **Comparative Narratives & Executive Briefs** – LLM-generated, structured narratives comparing any two health systems, with an executive-ready summary.
 - **Living System Narrative** – AI-generated rolling strategic narrative synthesizing signals, news, opportunities, interactions, and account strategy.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Next.js App                          │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
+│  │   Pages      │  │  Components  │  │  API Routes  │     │
+│  │ (Server)     │  │ (Server/     │  │  (Server)    │     │
+│  │              │  │  Client)      │  │              │     │
+│  └──────────────┘  └──────────────┘  └──────────────┘     │
+└─────────────────────────────────────────────────────────────┘
+                          │
+        ┌─────────────────┼─────────────────┐
+        │                 │                 │
+        ▼                 ▼                 ▼
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+│   Supabase   │  │    OpenAI    │  │  Firecrawl   │
+│  (Postgres + │  │  (GPT-4.1-   │  │     API      │
+│   pgvector)  │  │    mini +    │  │              │
+│              │  │  embeddings) │  │              │
+└──────────────┘  └──────────────┘  └──────────────┘
+
+Data Flow:
+1. Ingestion: Firecrawl → Documents → Supabase
+2. Processing: Documents → OpenAI Extraction → Entities/Signals → Supabase
+3. Embedding: Documents → OpenAI Embeddings → Supabase (pgvector)
+4. Query: User Query → Embedding → Vector Search → RAG → Response
+5. Generation: Context → OpenAI → Structured Outputs (Briefings, Narratives, etc.)
+```
 
 ## Tech Stack
 - **Framework:** Next.js 15 (App Router, React Server Components, TypeScript)
@@ -53,8 +85,8 @@ Key capabilities include:
    # populate each value before continuing
    ```
 4. **Provision Supabase schema**
-   Run each file inside `supabase/` via the Supabase SQL editor (order shown below):
-   - `schema.sql`
+   Run each file inside `supabase/` via the Supabase SQL editor in this order:
+   - `schema.sql` (base tables: systems, documents, entities, signals)
    - `daily_briefings.sql`
    - `embeddings.sql`
    - `feedback.sql`
@@ -66,6 +98,12 @@ Key capabilities include:
    - `run_logs.sql`
    - `system_profiles.sql`
    - `system_seeds.sql`
+   - `contacts.sql`
+   - `interactions.sql`
+   - `signal_actions.sql`
+   - `system_narratives.sql`
+   - `sales_briefings.sql`
+   - `add_performance_indexes.sql` (performance optimization - run last)
 5. **Start the dev server**
    ```bash
    npm run dev
@@ -76,13 +114,14 @@ Key capabilities include:
 ## Environment Variables
 All required keys live in `.env.local`. Copy from `.env.local.example` and supply real values.
 
-| Variable | Description |
-| --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project REST URL (safe to expose to the browser). |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key for browser + server requests. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service key for secure server-side helpers or scripts. |
-| `OPENAI_API_KEY` | Used for RAG chat, daily briefings, opportunity suggestions, and profiles. |
-| `FIRECRAWL_API_KEY` | Enables Firecrawl-powered ingestion for systems and news feeds. |
+| Variable | Description | Required |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project REST URL (safe to expose to the browser). | Yes |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key for browser + server requests. | Yes |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service key for secure server-side helpers or scripts. | Yes |
+| `OPENAI_API_KEY` | Used for RAG chat, daily briefings, opportunity suggestions, and profiles. | Yes |
+| `FIRECRAWL_API_KEY` | Enables Firecrawl-powered ingestion for systems and news feeds. | Yes |
+| `ADMIN_TOKEN` | Token for admin routes (`/admin/*`). Set a secure random string. | Optional (for admin features) |
 
 ## Common Commands
 - `npm run dev` – Start the local Next.js dev server.
@@ -141,4 +180,49 @@ Once deployed, confirm `/systems/[slug]`, `/dashboard`, and `/compare` load succ
   * Overview renders
   * Actions don't error
   * Chat returns an answer
+
+## Troubleshooting
+
+### Common Issues
+
+**Build fails with TypeScript errors**
+- Run `npm run type-check` to see specific errors
+- Ensure all environment variables are set
+- Check that `tsconfig.json` is properly configured
+
+**Supabase connection errors**
+- Verify `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are correct
+- Check Supabase project is active and not paused
+- Ensure RLS policies allow necessary operations
+
+**OpenAI API errors**
+- Verify `OPENAI_API_KEY` is set and valid
+- Check API key has access to `gpt-4.1-mini` and embeddings models
+- Monitor rate limits and usage in OpenAI dashboard
+
+**Firecrawl ingestion fails**
+- Verify `FIRECRAWL_API_KEY` is set
+- Check seed URLs are valid and accessible
+- Review Firecrawl API status and quotas
+
+**Embeddings not working**
+- Ensure `pgvector` extension is enabled in Supabase
+- Run `embeddings.sql` migration if not already done
+- Check document embeddings table exists and has proper schema
+
+**Admin routes return 500**
+- Set `ADMIN_TOKEN` environment variable
+- Clear cookies and re-authenticate at `/admin/login`
+
+**Performance issues**
+- Run `add_performance_indexes.sql` migration if not already done
+- Check Supabase query performance in dashboard
+- Monitor API route response times in Vercel logs
+
+### Getting Help
+
+- Check logs: Use `/api/log-test` to verify logging works
+- Health check: Visit `/health` to verify all services are configured
+- Database: Check Supabase logs for query errors
+- API: Check Vercel function logs for runtime errors
 

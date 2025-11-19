@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { logger } from "@/lib/logger";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
 export async function GET(request: Request) {
@@ -38,7 +39,7 @@ export async function GET(request: Request) {
       .order("full_name", { ascending: true });
 
     if (contactsError) {
-      console.error("Failed to fetch contacts", contactsError);
+      logger.error(contactsError, "Failed to fetch contacts");
       return NextResponse.json(
         { error: "fetch_failed" },
         { status: 500 },
@@ -47,7 +48,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ contacts: contacts ?? [] });
   } catch (error) {
-    console.error("Contacts API error:", error);
+    logger.error(error, "Contacts API error");
     return NextResponse.json(
       { error: "unexpected_error" },
       { status: 500 },
@@ -106,7 +107,7 @@ export async function POST(request: Request) {
     });
 
     if (insertError) {
-      console.error("Failed to insert contact", insertError);
+      logger.error(insertError, "Failed to insert contact");
       return NextResponse.json(
         { ok: false, error: "insert_failed" },
         { status: 500 },
@@ -115,7 +116,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("Contacts API error:", error);
+    logger.error(error, "Contacts API error");
     return NextResponse.json(
       { ok: false, error: "unexpected_error" },
       { status: 500 },

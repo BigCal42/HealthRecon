@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { logger } from "@/lib/logger";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
 export async function GET() {
@@ -12,7 +13,7 @@ export async function GET() {
       .order("name", { ascending: true });
 
     if (error) {
-      console.error("Failed to fetch systems", error);
+      logger.error(error, "Failed to fetch systems");
       return NextResponse.json(
         { error: "fetch_failed" },
         { status: 500 },
@@ -21,7 +22,7 @@ export async function GET() {
 
     return NextResponse.json({ systems: systems ?? [] });
   } catch (error) {
-    console.error("Systems API error:", error);
+    logger.error(error, "Systems API error");
     return NextResponse.json(
       { error: "unexpected_error" },
       { status: 500 },
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
     });
 
     if (insertError) {
-      console.error("Failed to insert system", insertError);
+      logger.error(insertError, "Failed to insert system");
       
       // Check for duplicate slug error
       if (insertError.code === "23505" || insertError.message.includes("unique")) {
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("Systems API error:", error);
+    logger.error(error, "Systems API error");
     return NextResponse.json(
       { ok: false, error: "unexpected_error" },
       { status: 500 },

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { logger } from "@/lib/logger";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
 export async function GET(request: Request) {
@@ -36,7 +37,7 @@ export async function GET(request: Request) {
       .order("created_at", { ascending: false });
 
     if (seedsError) {
-      console.error("Failed to fetch seeds", seedsError);
+      logger.error(seedsError, "Failed to fetch seeds");
       return NextResponse.json(
         { error: "fetch_failed" },
         { status: 500 },
@@ -45,7 +46,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ seeds: seeds ?? [] });
   } catch (error) {
-    console.error("System seeds API error:", error);
+    logger.error(error, "System seeds API error");
     return NextResponse.json(
       { error: "unexpected_error" },
       { status: 500 },
@@ -90,7 +91,7 @@ export async function POST(request: Request) {
     });
 
     if (insertError) {
-      console.error("Failed to insert seed", insertError);
+      logger.error(insertError, "Failed to insert seed");
       return NextResponse.json(
         { ok: false, error: "insert_failed" },
         { status: 500 },
@@ -99,7 +100,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("System seeds API error:", error);
+    logger.error(error, "System seeds API error");
     return NextResponse.json(
       { ok: false, error: "unexpected_error" },
       { status: 500 },

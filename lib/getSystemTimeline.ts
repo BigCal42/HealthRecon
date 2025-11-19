@@ -13,7 +13,7 @@ export interface TimelineEvent {
   title: string;
   description?: string;
   timestamp: string; // ISO
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 type SignalRow = {

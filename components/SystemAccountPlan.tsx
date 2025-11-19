@@ -92,9 +92,9 @@ export function SystemAccountPlan({ slug }: SystemAccountPlanProps) {
 
   const handleSave = async () => {
     setError(null);
-    let parsed: any;
+    let parsed: AccountPlan["summary"];
     try {
-      parsed = JSON.parse(rawPlan);
+      parsed = JSON.parse(rawPlan) as AccountPlan["summary"];
     } catch (err) {
       setError("Invalid JSON; cannot save.");
       return;

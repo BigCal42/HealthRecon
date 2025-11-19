@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 
-function getOpenAIClient() {
+function getOpenAIClient(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
@@ -11,14 +11,27 @@ function getOpenAIClient() {
 }
 
 export const openai = new Proxy({} as OpenAI, {
-  get(_target, prop) {
+  get(_target, prop: string | symbol) {
     const client = getOpenAIClient();
-    const value = (client as any)[prop];
+    const value = (client as unknown as Record<string | symbol, unknown>)[prop];
     return typeof value === "function" ? value.bind(client) : value;
   },
 });
 
 type ResponseFormat = "text" | "json_object";
+
+export interface OpenAIResponse {
+  output_text?: string;
+  output?: Array<{
+    content?: Array<{
+      text?: string;
+    }>;
+  }>;
+}
+
+export function extractTextFromResponse(response: OpenAIResponse): string | undefined {
+  return response.output_text ?? response.output?.[0]?.content?.[0]?.text;
+}
 
 export async function createResponse({
   prompt,
@@ -28,7 +41,7 @@ export async function createResponse({
   prompt: string;
   format?: ResponseFormat;
   model?: string;
-}) {
+}): Promise<OpenAIResponse> {
   const params: Record<string, unknown> = {
     model,
     input: prompt,
@@ -36,6 +49,6 @@ export async function createResponse({
 
   params["response_format"] = { type: format };
 
-  return openai.responses.create(params as any);
+  return (await openai.responses.create(params as Parameters<typeof openai.responses.create>[0])) as OpenAIResponse;
 }
 

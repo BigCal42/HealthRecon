@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabaseClient";
+
 import { hashText } from "@/lib/hash";
+import { logger } from "@/lib/logger";
+import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
 type FirecrawlPage = {
   url: string;
@@ -52,7 +54,9 @@ export async function POST() {
         });
 
         if (!firecrawlRes.ok) {
-          console.error(`Firecrawl request failed for ${source.url}`);
+          logger.error(new Error("Firecrawl request failed"), "Firecrawl request failed", {
+            url: source.url,
+          });
           continue;
         }
 
@@ -101,7 +105,7 @@ export async function POST() {
           documentsCreated++;
         }
       } catch (error) {
-        console.error(`Error processing news source ${source.url}:`, error);
+        logger.error(error, "Error processing news source", { url: source.url });
         continue;
       }
     }
@@ -111,7 +115,7 @@ export async function POST() {
       documents_created: documentsCreated,
     });
   } catch (error) {
-    console.error("News ingestion error:", error);
+    logger.error(error, "News ingestion error");
     return NextResponse.json(
       { error: "Unexpected server error" },
       { status: 500 },

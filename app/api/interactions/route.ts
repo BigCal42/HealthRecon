@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { logger } from "@/lib/logger";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
 export async function GET(request: Request) {
@@ -37,7 +38,7 @@ export async function GET(request: Request) {
       .limit(50);
 
     if (interactionsError) {
-      console.error("Failed to fetch interactions", interactionsError);
+      logger.error(interactionsError, "Failed to fetch interactions");
       return NextResponse.json(
         { error: "fetch_failed" },
         { status: 500 },
@@ -46,7 +47,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ interactions: interactions ?? [] });
   } catch (error) {
-    console.error("Interactions API error:", error);
+    logger.error(error, "Interactions API error");
     return NextResponse.json(
       { error: "unexpected_error" },
       { status: 500 },
@@ -103,7 +104,7 @@ export async function POST(request: Request) {
     });
 
     if (insertError) {
-      console.error("Failed to insert interaction", insertError);
+      logger.error(insertError, "Failed to insert interaction");
       return NextResponse.json(
         { ok: false, error: "insert_failed" },
         { status: 500 },
@@ -112,7 +113,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("Interactions API error:", error);
+    logger.error(error, "Interactions API error");
     return NextResponse.json(
       { ok: false, error: "unexpected_error" },
       { status: 500 },

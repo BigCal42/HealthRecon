@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { BILH_SLUG } from "@/config/constants";
 import { getDailyInputs } from "@/lib/getDailyInputs";
 import { logger } from "@/lib/logger";
-import { createResponse } from "@/lib/openaiClient";
+import { createResponse, extractTextFromResponse } from "@/lib/openaiClient";
 import { rateLimit } from "@/lib/rateLimit";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
@@ -90,9 +90,7 @@ export async function POST(request: Request) {
     format: "json_object",
   });
 
-  const rawOutput =
-    (response as any)?.output_text ??
-    (response as any)?.output?.[0]?.content?.[0]?.text;
+  const rawOutput = extractTextFromResponse(response);
 
   if (!rawOutput) {
     // Log error

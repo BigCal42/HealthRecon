@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getSignalActionContext } from "@/lib/getSignalActionContext";
 import { logger } from "@/lib/logger";
-import { createResponse } from "@/lib/openaiClient";
+import { createResponse, extractTextFromResponse } from "@/lib/openaiClient";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
 type ActionItem = {
@@ -168,9 +168,7 @@ export async function POST(request: Request) {
       format: "json_object",
     });
 
-    const rawOutput =
-      (response as any)?.output_text ??
-      (response as any)?.output?.[0]?.content?.[0]?.text;
+    const rawOutput = extractTextFromResponse(response);
 
     if (!rawOutput) {
       logger.error("Model response missing", { systemId: system.id, signalId: body.signalId });

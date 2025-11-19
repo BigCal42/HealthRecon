@@ -48,10 +48,6 @@ create table if not exists signals (
 create unique index if not exists documents_system_hash_idx
   on documents (system_id, hash);
 
--- If documents already exists, run these statements in Supabase:
--- alter table documents add column if not exists hash text;
--- alter table documents add column if not exists processed boolean not null default false;
-
 insert into systems (slug, name, website)
 values ('bilh', 'Beth Israel Lahey Health', 'https://bilh.org')
 on conflict (slug) do nothing;

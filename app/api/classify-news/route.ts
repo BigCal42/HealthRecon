@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabaseClient";
+
 import { classifySystem } from "@/lib/classifySystem";
+import { logger } from "@/lib/logger";
+import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
 export async function POST() {
   try {
@@ -14,7 +16,7 @@ export async function POST() {
       .eq("processed", true);
 
     if (error) {
-      console.error("Failed to load news documents", error);
+      logger.error(error, "Failed to load news documents");
       return NextResponse.json({ classified: 0 });
     }
 
@@ -52,20 +54,20 @@ export async function POST() {
           .eq("id", doc.id);
 
         if (updateError) {
-          console.error("Failed to update document system_id", updateError);
+          logger.error(updateError, "Failed to update document system_id", { documentId: doc.id });
           continue;
         }
 
         classified++;
       } catch (error) {
-        console.error("Failed to classify document", doc.id, error);
+        logger.error(error, "Failed to classify document", { documentId: doc.id });
         continue;
       }
     }
 
     return NextResponse.json({ classified });
   } catch (error) {
-    console.error("Classification error:", error);
+    logger.error(error, "Classification error");
     return NextResponse.json(
       { error: "Unexpected server error" },
       { status: 500 },

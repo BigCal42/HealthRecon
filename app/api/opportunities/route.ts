@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { logger } from "@/lib/logger";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
 export async function GET(request: Request) {
@@ -36,7 +37,7 @@ export async function GET(request: Request) {
       .order("created_at", { ascending: false });
 
     if (opportunitiesError) {
-      console.error("Failed to fetch opportunities", opportunitiesError);
+      logger.error(opportunitiesError, "Failed to fetch opportunities");
       return NextResponse.json(
         { error: "fetch_failed" },
         { status: 500 },
@@ -45,7 +46,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ opportunities: opportunities ?? [] });
   } catch (error) {
-    console.error("Opportunities API error:", error);
+    logger.error(error, "Opportunities API error");
     return NextResponse.json(
       { error: "unexpected_error" },
       { status: 500 },
@@ -96,7 +97,7 @@ export async function POST(request: Request) {
     });
 
     if (insertError) {
-      console.error("Failed to insert opportunity", insertError);
+      logger.error(insertError, "Failed to insert opportunity");
       return NextResponse.json(
         { ok: false, error: "insert_failed" },
         { status: 500 },
@@ -105,7 +106,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("Opportunities API error:", error);
+    logger.error(error, "Opportunities API error");
     return NextResponse.json(
       { ok: false, error: "unexpected_error" },
       { status: 500 },

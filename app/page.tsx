@@ -32,6 +32,7 @@ export default async function Home() {
         <Link href="/search">Global Search</Link> |{" "}
         <Link href="/sales-briefing">Daily Sales Briefing</Link> |{" "}
         <Link href="/health-scores">System Health Scores</Link> |{" "}
+        <Link href="/compare">Compare Systems</Link> |{" "}
         <Link href="/admin/systems">Admin: Manage Systems</Link>
       </p>
 

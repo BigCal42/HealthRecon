@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { createResponse } from "@/lib/openaiClient";
 import type { ExtractionResult } from "@/lib/extractionSchema";
 import { logger } from "@/lib/logger";
+import { createResponse, extractTextFromResponse } from "@/lib/openaiClient";
 
 type DocumentRow = {
   id: string;
@@ -62,9 +62,7 @@ export async function runProcessForSystem(
         format: "json_object",
       });
 
-      const jsonText =
-        (response as any)?.output_text ??
-        (response as any)?.output?.[0]?.content?.[0]?.text;
+      const jsonText = extractTextFromResponse(response);
 
       if (!jsonText) {
         throw new Error("OpenAI response did not include text output.");

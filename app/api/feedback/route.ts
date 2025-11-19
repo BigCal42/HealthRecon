@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { logger } from "@/lib/logger";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
 export async function POST(request: Request) {
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
     });
 
     if (insertError) {
-      console.error("Failed to insert feedback", insertError);
+      logger.error(insertError, "Failed to insert feedback");
       return NextResponse.json(
         { ok: false, error: "insert_failed" },
         { status: 500 },
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("Feedback API error:", error);
+    logger.error(error, "Feedback API error");
     return NextResponse.json(
       { ok: false, error: "unexpected_error" },
       { status: 500 },

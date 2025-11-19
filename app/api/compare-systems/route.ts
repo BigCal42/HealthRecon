@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 
 import { BILH_SLUG } from "@/config/constants";
 import { getSystemContext } from "@/lib/getSystemContext";
-import { createResponse } from "@/lib/openaiClient";
+import { logger } from "@/lib/logger";
+import { createResponse, extractTextFromResponse } from "@/lib/openaiClient";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
 type ComparisonResult = {
@@ -120,9 +121,7 @@ export async function POST(request: Request) {
       format: "json_object",
     });
 
-    const rawOutput =
-      (response as any)?.output_text ??
-      (response as any)?.output?.[0]?.content?.[0]?.text;
+    const rawOutput = extractTextFromResponse(response);
 
     if (!rawOutput) {
       return NextResponse.json(
@@ -136,7 +135,7 @@ export async function POST(request: Request) {
     try {
       parsed = JSON.parse(rawOutput) as ComparisonResult;
     } catch (error) {
-      console.error("Failed to parse model output", error, rawOutput);
+      logger.error(error, "Failed to parse model output", { rawOutput });
       return NextResponse.json(
         { error: "model_failure" },
         { status: 502 },
@@ -160,7 +159,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(parsed);
   } catch (error) {
-    console.error("Compare systems error:", error);
+    logger.error(error, "Compare systems error");
     return NextResponse.json(
       { error: "model_failure" },
       { status: 500 },

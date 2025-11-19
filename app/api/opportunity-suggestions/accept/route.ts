@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { logger } from "@/lib/logger";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
 export async function POST(request: Request) {
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
       .maybeSingle<{ id: string }>();
 
     if (insertError || !inserted) {
-      console.error("Failed to create opportunity from suggestion", insertError);
+      logger.error(insertError, "Failed to create opportunity from suggestion");
       return NextResponse.json({ ok: false, error: "insert_failed" }, { status: 500 });
     }
 
@@ -81,13 +82,13 @@ export async function POST(request: Request) {
       .eq("id", suggestionId);
 
     if (updateError) {
-      console.error("Failed to mark suggestion accepted", updateError);
+      logger.error(updateError, "Failed to mark suggestion accepted");
       return NextResponse.json({ ok: false, error: "update_failed" }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true, opportunityId: inserted.id });
   } catch (error) {
-    console.error("Opportunity suggestion accept error", error);
+    logger.error(error, "Opportunity suggestion accept error");
     return NextResponse.json({ ok: false, error: "unexpected_error" }, { status: 500 });
   }
 }

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
-export async function GET() {
+export async function GET(): Promise<NextResponse> {
   const supabase = createServerSupabaseClient();
 
   const { error: systemsError } = await supabase
