@@ -8,6 +8,7 @@ Key capabilities include:
 - Daily briefings, news ingestion, signals, opportunities, and suggested opportunities to keep teams updated.
 - Rich system profiles, opportunities boards, dashboards, and comparison views to summarize each health system.
 - **Meeting Prep Packs** – one-click LLM-generated meeting/call prep using system context, contacts, opportunities, interactions, and account plans.
+- **Signal Actions** – convert signals into recommended sales actions with LLM-generated guidance.
 - **Outbound Playbooks** – AI-generated system-specific outbound prep with brief, talk tracks, email openers, and next actions.
 - **Outbound Draft Composer** – one-click generation of tailored email and call drafts per system, with copy-to-clipboard.
 - **Account Plans** – structured, LLM-assisted account plans per system with editable JSON.

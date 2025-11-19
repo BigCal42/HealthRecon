@@ -14,6 +14,7 @@ import { SystemAccountPlan } from "@/components/SystemAccountPlan";
 import { SystemContacts } from "@/components/SystemContacts";
 import { SystemTimeline } from "@/components/SystemTimeline";
 import { SystemMeetingPrep } from "@/components/SystemMeetingPrep";
+import { SystemSignalActions } from "@/components/SystemSignalActions";
 
 type SystemRow = {
   id: string;
@@ -428,6 +429,11 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
             })()}
           </>
         )}
+      </section>
+
+      <section style={{ marginTop: "2rem" }}>
+        <h2>Signal-Based Actions</h2>
+        <SystemSignalActions slug={system.slug} signals={signals} />
       </section>
 
       <section style={{ marginTop: "2rem" }}>
