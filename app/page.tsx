@@ -30,6 +30,7 @@ export default async function Home() {
         <Link href="/dashboard">View Systems Dashboard</Link> |{" "}
         <Link href="/targets">View System Targeting</Link> |{" "}
         <Link href="/search">Global Search</Link> |{" "}
+        <Link href="/sales-briefing">Daily Sales Briefing</Link> |{" "}
         <Link href="/admin/systems">Admin: Manage Systems</Link>
       </p>
 
