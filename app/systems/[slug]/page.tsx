@@ -3,6 +3,8 @@ import { groupBy } from "@/lib/groupBy";
 import { logger } from "@/lib/logger";
 import type { EntityType } from "@/lib/types";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
+import { UICopy } from "@/lib/uiCopy";
+import Link from "next/link";
 import { SystemActions } from "@/components/SystemActions";
 import { SystemChat } from "@/components/SystemChat";
 import { SystemInteractions } from "@/components/SystemInteractions";
@@ -14,7 +16,6 @@ import { SystemProfile } from "@/components/SystemProfile";
 import { SystemAccountPlan } from "@/components/SystemAccountPlan";
 import { SystemContacts } from "@/components/SystemContacts";
 import { SystemTimeline } from "@/components/SystemTimeline";
-import { SystemMeetingPrep } from "@/components/SystemMeetingPrep";
 import { SystemSignalActions } from "@/components/SystemSignalActions";
 import { SystemNarrative } from "@/components/SystemNarrative";
 import { getSingleSystemHealthScore } from "@/lib/getSingleSystemHealthScore";
@@ -134,7 +135,7 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
 
   const { data: briefing } = await supabase
     .from("daily_briefings")
-    .select("*")
+    .select("id, summary, created_at")
     .eq("system_id", system.id)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -242,7 +243,7 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
 
   return (
     <div style={{ padding: "2rem" }}>
-      <h1>{system.name}</h1>
+      <h1>{UICopy.systemSections.overview} – {system.name}</h1>
       {system.website && (
         <p>
           <a href={system.website} target="_blank" rel="noopener noreferrer">
@@ -250,6 +251,34 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
           </a>
         </p>
       )}
+      <nav>
+        <ul style={{ listStyle: "none", padding: 0, display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+          <li>
+            <Link href={`/systems/${system.slug}/timeline`}>{UICopy.systemSections.timeline}</Link>
+          </li>
+          <li>
+            <Link href={`/systems/${system.slug}/deals`}>{UICopy.systemSections.deals}</Link>
+          </li>
+          <li>
+            <Link href={`/systems/${system.slug}/insights`}>{UICopy.systemSections.insights}</Link>
+          </li>
+          <li>
+            <Link href={`/systems/${system.slug}/outbound-playbook`}>Outbound Playbook</Link>
+          </li>
+          <li>
+            <Link href={`/systems/${system.slug}/strategy`}>Strategy Briefing</Link>
+          </li>
+          <li>
+            <Link href={`/systems/${system.slug}/meeting-prep`}>Meeting Prep</Link>
+          </li>
+          <li>
+            <Link href={`/systems/${system.slug}/ingestion`}>Ingestion</Link>
+          </li>
+          <li>
+            <Link href={`/demo?slug=${system.slug}`}>{UICopy.nav.heroDemo}</Link>
+          </li>
+        </ul>
+      </nav>
 
       <section style={{ marginTop: "2rem" }}>
         <h2>System Health</h2>
@@ -315,11 +344,6 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
       </section>
 
       <section style={{ marginTop: "2rem" }}>
-        <h2>Meeting / Call Prep</h2>
-        <SystemMeetingPrep slug={system.slug} />
-      </section>
-
-      <section style={{ marginTop: "2rem" }}>
         <h2>Outbound Prep & Playbook</h2>
         <SystemOutboundPrep slug={system.slug} />
       </section>
@@ -359,7 +383,7 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
         <SystemOpportunities slug={system.slug} />
       </section>
 
-      <SystemTimeline systemId={system.id} />
+      <SystemTimeline systemSlug={system.slug} />
 
       <section style={{ marginTop: "2rem" }}>
         <h2>Interaction Log</h2>
@@ -412,7 +436,7 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
       )}
 
       <section style={{ marginTop: "2rem" }}>
-        <h2>Signals</h2>
+        <h2>{UICopy.systemSections.signals}</h2>
         {signals.length === 0 ? (
           <p>No signals yet</p>
         ) : (
@@ -507,7 +531,7 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
       </section>
 
       <section style={{ marginTop: "2rem" }}>
-        <h2>Documents</h2>
+        <h2>{UICopy.systemSections.documents}</h2>
         {documents.length === 0 ? (
           <p>No documents yet</p>
         ) : (
