@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { config } from "@/lib/config";
 import { logger } from "@/lib/logger";
 
 export async function POST(request: Request) {
@@ -9,44 +11,40 @@ export async function POST(request: Request) {
       from: string;
     };
 
-    const adminToken = process.env.ADMIN_TOKEN;
+    const adminToken = config.ADMIN_TOKEN;
 
     if (!adminToken) {
-      return NextResponse.json(
-        { ok: false, error: "Admin not configured" },
-        { status: 500 },
-      );
+      return apiError(500, "config_error", "Admin not configured");
     }
 
     if (body.token !== adminToken) {
-      return NextResponse.json(
-        { ok: false, error: "Invalid token" },
-        { status: 401 },
-      );
+      return apiError(401, "invalid_token", "Invalid token");
     }
 
     const redirectTo = body.from || "/admin/systems";
 
-    const response = NextResponse.json({
-      ok: true,
-      redirectTo,
-    });
+    const response = apiSuccess({ redirectTo });
 
-    // Set cookie: HttpOnly, Secure, SameSite=Lax
-    response.cookies.set("admin_token", adminToken, {
+    // Create token with expiration (24 hours from now)
+    const expiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+    const tokenData = {
+      token: adminToken,
+      expiresAt,
+    };
+
+    // Set cookie: HttpOnly, Secure, SameSite=Lax, with expiration
+    response.cookies.set("admin_token", JSON.stringify(tokenData), {
       path: "/",
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: config.NODE_ENV === "production",
       sameSite: "lax",
+      maxAge: 24 * 60 * 60, // 24 hours in seconds
     });
 
     return response;
   } catch (error) {
     logger.error(error, "Login API error");
-    return NextResponse.json(
-      { ok: false, error: "unexpected_error" },
-      { status: 500 },
-    );
+    return apiError(500, "unexpected_error", "An unexpected error occurred");
   }
 }
 

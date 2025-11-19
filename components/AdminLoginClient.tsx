@@ -26,14 +26,14 @@ export function AdminLoginClient({ from }: AdminLoginClientProps) {
       });
 
       const data = (await response.json()) as
-        | { ok: true; redirectTo: string }
-        | { ok: false; error: string };
+        | { ok: true; data: { redirectTo: string } }
+        | { ok: false; error: { code: string; message: string } };
 
       if (data.ok) {
         setStatus("success");
-        window.location.href = data.redirectTo;
+        window.location.href = data.data.redirectTo;
       } else {
-        setError(data.error || "Invalid token");
+        setError(data.error.message || "Invalid token");
         setStatus("idle");
       }
     } catch (err) {
