@@ -1,2 +1,21 @@
-{}
+{
+  "crons": [
+    {
+      "path": "/api/cron/daily-ingest",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/daily-briefings",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/classify-news",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/sales-briefing",
+      "schedule": "0 7 * * *"
+    }
+  ]
+}
 

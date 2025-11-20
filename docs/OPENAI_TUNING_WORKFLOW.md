@@ -244,26 +244,61 @@ You: "Monitor narrative quality and costs for the next week"
 
 **Purpose:** Analyze OpenAI usage patterns from code and logs.
 
-**Future Implementation Ideas:**
+**Status:** ✅ Implemented and ready to use.
 
-```typescript
-// TODO: Implement usage analysis
-// - Scan codebase for OpenAI calls
-// - Extract model choices, prompt sizes, configs
-// - Generate usage report
-// - Suggest optimizations
-```
+**Features:**
+- Scans codebase for OpenAI API calls (`createResponse`, `generateJson`, `embedText`)
+- Extracts model choices, prompt sizes, and configurations
+- Generates comprehensive usage report with:
+  - Total API calls found
+  - Model distribution (counts and percentages)
+  - Function distribution
+  - Cost estimates (rough, per 1M requests)
+  - Top files by usage
+  - Optimization suggestions
 
-**Usage (when implemented):**
+**Usage:**
 ```bash
 npm run analyze-openai-usage
 ```
 
 **Output:**
 - Summary of OpenAI usage across codebase
-- Model distribution
-- Cost estimates
-- Optimization suggestions
+- Model distribution with call counts
+- Function distribution (createResponse, generateJson, embedText)
+- Cost estimates by model
+- Top files by usage count
+- Optimization suggestions (e.g., expensive model usage, batching opportunities)
+
+**Example Output:**
+```
+OpenAI Usage Analysis Report
+================================================================================
+
+SUMMARY
+--------------------------------------------------------------------------------
+Total OpenAI API calls found: 45
+Files analyzed: 23
+Unique models used: 2
+
+MODEL DISTRIBUTION
+--------------------------------------------------------------------------------
+  gpt-4.1-mini                     38 calls (84.4%)
+  text-embedding-3-small            7 calls (15.6%)
+
+COST ESTIMATE (per 1M requests, rough)
+--------------------------------------------------------------------------------
+Total estimated cost: $2.85
+  gpt-4.1-mini                      $2.50
+  text-embedding-3-small            $0.35
+
+OPTIMIZATION SUGGESTIONS
+--------------------------------------------------------------------------------
+  1. Found 7 embedText calls. Consider batching multiple texts in single calls where possible.
+  2. Files with high OpenAI usage: lib/openaiClient.ts (12), app/api/chat/route.ts (8)...
+```
+
+**Note:** This script uses static code analysis and does not require the ADMIN OpenAI key. It analyzes the codebase structure, not actual API usage logs.
 
 ## Constraints & Limitations
 

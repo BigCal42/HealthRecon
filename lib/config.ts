@@ -31,6 +31,9 @@ const envSchema = z.object({
   // Internal API (optional, for Phase 4)
   INTERNAL_API_KEY: z.string().optional(),
 
+  // Cron secret (optional, for Vercel Cron authentication)
+  CRON_SECRET: z.string().optional(),
+
   // Node environment
   NODE_ENV: z.enum(["development", "production", "test"]).optional().default("development"),
 
@@ -51,6 +54,7 @@ function validateEnv(): EnvConfig {
     FIRECRAWL_BASE_URL: process.env.FIRECRAWL_BASE_URL,
     ADMIN_TOKEN: process.env.ADMIN_TOKEN,
     INTERNAL_API_KEY: process.env.INTERNAL_API_KEY,
+    CRON_SECRET: process.env.CRON_SECRET,
     NODE_ENV: process.env.NODE_ENV,
     SENTRY_DSN: process.env.SENTRY_DSN,
   };
@@ -84,6 +88,7 @@ try {
       FIRECRAWL_BASE_URL: process.env.FIRECRAWL_BASE_URL || "https://api.firecrawl.dev",
       ADMIN_TOKEN: process.env.ADMIN_TOKEN,
       INTERNAL_API_KEY: process.env.INTERNAL_API_KEY,
+      CRON_SECRET: process.env.CRON_SECRET,
       NODE_ENV: (process.env.NODE_ENV as "development" | "production" | "test") || "development",
       SENTRY_DSN: process.env.SENTRY_DSN,
     };

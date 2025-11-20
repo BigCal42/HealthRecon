@@ -10,6 +10,8 @@ This document defines the environment strategy for HealthRecon's Supabase projec
 | **Stage** | HealthRecon Stage | TBD | Pre-production testing | ⏳ Optional |
 | **Prod** | HealthRecon Prod | TBD | Production | ⏳ TBD |
 
+**Note:** Currently all Vercel environments (Production, Preview, Development) point to the Dev Supabase project. See "Production Supabase Setup" section below for migration guide.
+
 ## Environment Variables
 
 ### Required Variables
@@ -286,13 +288,108 @@ Firecrawl uses a single API key per environment. Currently, the same API key can
 
 See `docs/INGESTION_PLAN.md` for detailed Firecrawl integration and operational limits.
 
-## Next Steps
+## Production Supabase Setup
 
-1. ✅ Phase 1: Environment & Project Strategy (Complete)
-2. ⏭️ Phase 2: Schema & Migration Plan
-3. ⏭️ Phase 3: Auth, RLS, and Security Best Practices
-4. ⏭️ Phase 4: Supabase Types & Client Configuration
-5. ⏭️ Phase 5: Performance, Extensions, and Monitoring
-6. ⏭️ Phase 6: Documentation & Checklists
-7. ⏭️ Phase 7: Final Sanity & Validation
+### Overview
+
+When ready to launch production, create a separate Supabase project for production workloads. This provides:
+- Data isolation between dev and production
+- Independent scaling and performance tuning
+- Separate backup and recovery strategies
+- Production-grade security and compliance
+
+### Migration Checklist
+
+**Pre-Migration:**
+- [ ] Create new Supabase project in Supabase dashboard
+- [ ] Enable `pgvector` extension in production project
+- [ ] Enable `pgcrypto`, `uuid-ossp`, and `pg_stat_statements` extensions
+- [ ] Document production project ID and URL
+
+**Migration Steps:**
+1. **Apply All Migrations:**
+   - Apply all migrations from `supabase/migrations/` sequentially to production project
+   - Verify schema matches dev project (use Supabase MCP or dashboard)
+   - Confirm all 20+ migrations applied successfully
+
+2. **Seed Data (Optional):**
+   - Copy seed data if needed (systems, news_sources)
+   - Use Supabase dashboard SQL editor or MCP to insert seed data
+   - Verify seed data matches dev environment
+
+3. **Update Vercel Environment Variables:**
+   - Go to Vercel → Project Settings → Environment Variables
+   - Update **Production** environment variables:
+     - `NEXT_PUBLIC_SUPABASE_URL` → Production Supabase URL
+     - `NEXT_PUBLIC_SUPABASE_ANON_KEY` → Production Supabase anon key
+     - `SUPABASE_SERVICE_ROLE_KEY` → Production Supabase service role key
+   - **Keep Preview/Development** pointing to dev Supabase (for testing)
+
+4. **Verify Production Connection:**
+   - Deploy to Production (or use Preview with production env vars)
+   - Visit `/api/health` endpoint
+   - Verify `supabase: "ok"` in response
+   - Test key functionality (dashboard, system pages, API routes)
+
+5. **Post-Migration Verification:**
+   - [ ] Health check passes
+   - [ ] Systems load correctly
+   - [ ] Ingestion works (test with one system)
+   - [ ] Briefings generate successfully
+   - [ ] RLS policies are active
+   - [ ] Performance indexes are created
+
+### Environment Variable Migration Guide
+
+**Before Migration:**
+```bash
+# All environments use dev Supabase
+NEXT_PUBLIC_SUPABASE_URL=https://jsewfrvuivhcwqkziuge.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<dev-anon-key>
+SUPABASE_SERVICE_ROLE_KEY=<dev-service-key>
+```
+
+**After Migration:**
+```bash
+# Production uses production Supabase
+# (Set in Vercel Production environment only)
+NEXT_PUBLIC_SUPABASE_URL=https://<prod-project-id>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<prod-anon-key>
+SUPABASE_SERVICE_ROLE_KEY=<prod-service-key>
+
+# Preview/Development still use dev Supabase
+# (Set in Vercel Preview/Development environments)
+NEXT_PUBLIC_SUPABASE_URL=https://jsewfrvuivhcwqkziuge.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<dev-anon-key>
+SUPABASE_SERVICE_ROLE_KEY=<dev-service-key>
+```
+
+### Rollback Plan
+
+If production migration fails:
+1. Revert Vercel Production environment variables to dev Supabase
+2. Redeploy Production environment
+3. Investigate issues in dev environment
+4. Fix and retry migration
+
+### Ongoing Maintenance
+
+**After Production Launch:**
+- Apply new migrations to production Supabase before deploying code changes
+- Test migrations in dev first
+- Use Preview deployments to validate production migrations
+- Monitor production Supabase logs and performance
+- Set up production Supabase backups (if not automatic)
+
+**Migration Workflow:**
+1. Create migration file in `supabase/migrations/`
+2. Apply to dev Supabase project
+3. Test via Preview deployment
+4. Apply to production Supabase project
+5. Deploy to Production Vercel environment
+
+---
+
+**Last Updated:** 2025-01-21  
+**Maintained By:** HealthRecon Operations
 

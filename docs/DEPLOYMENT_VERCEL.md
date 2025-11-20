@@ -403,6 +403,7 @@ If `ok: false` or any service shows as not configured, check:
 - [ ] Add new environment variables when adding features
 - [ ] Update Supabase migrations before deploying
 - [ ] Test Preview deployments before merging to `main`
+- [ ] Set up production Supabase project (see `docs/SUPABASE_ENVIRONMENTS.md`)
 
 ---
 
