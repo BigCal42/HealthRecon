@@ -6,6 +6,7 @@ import { getHomeTopSystems } from "@/lib/getHomeTopSystems";
 import { getHomeHeroBriefing } from "@/lib/getHomeHeroBriefing";
 import { PageShell } from "@/components/layout/PageShell";
 import { Nav } from "@/components/layout/Nav";
+import { log } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -33,13 +34,60 @@ function formatCurrency(amount: number | null): string {
   }).format(amount);
 }
 
+async function safeGetHomeFocus(supabase: ReturnType<typeof createServerSupabaseClient>) {
+  try {
+    return await getHomeFocus(supabase);
+  } catch (error) {
+    log("error", "Failed to load home focus items", { route: "/" }, error instanceof Error ? error : undefined);
+    return [];
+  }
+}
+
+async function safeGetHomeTopSystems(supabase: ReturnType<typeof createServerSupabaseClient>) {
+  try {
+    return await getHomeTopSystems(supabase);
+  } catch (error) {
+    log("error", "Failed to load home top systems", { route: "/" }, error instanceof Error ? error : undefined);
+    return [];
+  }
+}
+
+async function safeGetHomeHeroBriefing(supabase: ReturnType<typeof createServerSupabaseClient>) {
+  try {
+    return await getHomeHeroBriefing(supabase);
+  } catch (error) {
+    log("error", "Failed to load home hero briefing", { route: "/" }, error instanceof Error ? error : undefined);
+    return null;
+  }
+}
+
 export default async function HomePage() {
-  const supabase = createServerSupabaseClient();
+  let supabase;
+  try {
+    supabase = createServerSupabaseClient();
+  } catch (error) {
+    log("error", "Failed to create Supabase client", { route: "/" }, error instanceof Error ? error : undefined);
+    // Return error UI instead of throwing
+    return (
+      <PageShell>
+        <h1>HealthRecon Operator Console</h1>
+        <div className="mt-4 p-4 border border-red-500/50 rounded-lg bg-red-500/10">
+          <h2 className="text-red-500 mb-2">Configuration Error</h2>
+          <p className="text-muted-foreground">
+            Unable to connect to the database. Please check your environment variables and ensure Supabase is configured correctly.
+          </p>
+          <p className="text-sm text-muted-foreground mt-2">
+            Check the Vercel deployment logs for more details.
+          </p>
+        </div>
+      </PageShell>
+    );
+  }
 
   const [focusItems, topSystems, heroBriefing] = await Promise.all([
-    getHomeFocus(supabase),
-    getHomeTopSystems(supabase),
-    getHomeHeroBriefing(supabase),
+    safeGetHomeFocus(supabase),
+    safeGetHomeTopSystems(supabase),
+    safeGetHomeHeroBriefing(supabase),
   ]);
 
   return (

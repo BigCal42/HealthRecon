@@ -43,6 +43,34 @@ const envSchema = z.object({
 
 type EnvConfig = z.infer<typeof envSchema>;
 
+/**
+ * Helper function to format environment variable errors with helpful context
+ */
+function formatEnvError(errors: z.ZodError["errors"]): string {
+  const errorMessages = errors.map((err) => {
+    const path = err.path.join(".");
+    const message = err.message;
+    
+    // Add helpful context for common variables
+    let context = "";
+    if (path === "NEXT_PUBLIC_SUPABASE_URL") {
+      context = " (Find this in Supabase Dashboard → Project Settings → API → Project URL)";
+    } else if (path === "NEXT_PUBLIC_SUPABASE_ANON_KEY") {
+      context = " (Find this in Supabase Dashboard → Project Settings → API → anon public key)";
+    } else if (path === "SUPABASE_SERVICE_ROLE_KEY") {
+      context = " (Find this in Supabase Dashboard → Project Settings → API → service_role secret key)";
+    } else if (path === "OPENAI_API_KEY") {
+      context = " (Find this in OpenAI Dashboard → API Keys)";
+    } else if (path === "FIRECRAWL_API_KEY") {
+      context = " (Find this in Firecrawl Dashboard → API Keys)";
+    }
+    
+    return `  • ${path}: ${message}${context}`;
+  });
+
+  return `Environment variable validation failed:\n\n${errorMessages.join("\n")}\n\nTo fix:\n  1. Go to Vercel Dashboard → Settings → Environment Variables\n  2. Add the missing variables for the correct environment (Production/Preview)\n  3. Redeploy the application\n\nSee docs/ENVIRONMENT_VERCEL.md for detailed setup instructions.`;
+}
+
 function validateEnv(): EnvConfig {
   const rawEnv = {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -62,8 +90,12 @@ function validateEnv(): EnvConfig {
   const result = envSchema.safeParse(rawEnv);
 
   if (!result.success) {
-    const errors = result.error.errors.map((err: { path: (string | number)[]; message: string }) => `${err.path.join(".")}: ${err.message}`).join("\n");
-    throw new Error(`Environment variable validation failed:\n${errors}`);
+    const formattedError = formatEnvError(result.error.errors);
+    const error = new Error(formattedError);
+    // Log to console for visibility in Vercel logs
+    console.error("[CONFIG] Environment variable validation failed:");
+    console.error(formattedError);
+    throw error;
   }
 
   return result.data;
@@ -149,4 +181,32 @@ export const config = {
 
 // Export typed config for convenience
 export type Config = typeof config;
+
+/**
+ * Safely access config with error handling.
+ * Use this in components that need to handle missing config gracefully.
+ * 
+ * @returns Config object if valid, null if validation failed
+ */
+export function getConfigSafely(): Config | null {
+  try {
+    return config;
+  } catch (error) {
+    console.error("[CONFIG] Failed to access config:", error);
+    return null;
+  }
+}
+
+/**
+ * Check if required environment variables are configured.
+ * Useful for health checks and diagnostics.
+ */
+export function isConfigValid(): boolean {
+  try {
+    validateEnv();
+    return true;
+  } catch {
+    return false;
+  }
+}
 
