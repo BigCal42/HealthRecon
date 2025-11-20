@@ -1,255 +1,216 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { log } from "@/lib/logger";
 
-export interface TimelineEvent {
-  type:
-    | "signal"
-    | "news"
-    | "document"
-    | "interaction"
-    | "opportunity"
-    | "profile"
-    | "pipeline_run"
-    | "daily_briefing";
+export type TimelineItemType =
+  | "signal"
+  | "interaction"
+  | "work_item"
+  | "opportunity";
+
+export interface TimelineItem {
+  id: string;
+  type: TimelineItemType;
+  systemId: string;
+  occurredAt: string; // ISO string
   title: string;
-  description?: string;
-  timestamp: string; // ISO
-  metadata?: Record<string, unknown>;
+  description?: string | null;
+  meta?: Record<string, any>;
+}
+
+export interface SystemTimeline {
+  systemId: string;
+  slug: string;
+  name: string;
+  items: TimelineItem[];
 }
 
 type SignalRow = {
   id: string;
+  system_id: string;
   summary: string | null;
   category: string | null;
   severity: string | null;
-  created_at: string | null;
-};
-
-type NewsRow = {
-  id: string;
-  title: string | null;
-  crawled_at: string | null;
-};
-
-type DocumentRow = {
-  id: string;
-  title: string | null;
-  crawled_at: string | null;
+  created_at: string;
 };
 
 type InteractionRow = {
   id: string;
+  system_id: string;
+  channel: string;
   subject: string | null;
   summary: string | null;
-  occurred_at: string | null;
+  occurred_at: string;
+  next_step_due_at: string | null;
+};
+
+type WorkItemRow = {
+  id: string;
+  system_id: string;
+  source_type: string;
+  status: string;
+  title: string;
+  description: string | null;
+  due_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 type OpportunityRow = {
   id: string;
-  title: string | null;
-  status: string | null;
-  created_at: string | null;
-};
-
-type SystemProfileRow = {
-  id: string;
-  summary: {
-    executive_summary?: string;
-  };
-  created_at: string | null;
-};
-
-type PipelineRunRow = {
-  id: string;
+  system_id: string;
+  title: string;
   status: string;
-  created_at: string | null;
-};
-
-type DailyBriefingRow = {
-  id: string;
-  created_at: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export async function getSystemTimeline(
   supabase: SupabaseClient,
-  systemId: string,
-): Promise<TimelineEvent[]> {
+  systemSlug: string,
+  options?: {
+    limit?: number; // total number of items
+    daysBack?: number; // window, e.g. last 90 days
+  }
+): Promise<SystemTimeline | null> {
+  // 1. Resolve system
+  const { data: system, error: systemError } = await supabase
+    .from("systems")
+    .select("id, slug, name")
+    .eq("slug", systemSlug)
+    .maybeSingle();
+
+  if (systemError || !system) {
+    return null;
+  }
+
+  // 2. Time window
+  const daysBack = options?.daysBack ?? 90;
+  const now = new Date();
+  const start = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000);
+  const startIso = start.toISOString();
+
+  // 3. Fetch sources in parallel
   const [
-    { data: signalRows },
-    { data: newsRows },
-    { data: documentRows },
-    { data: interactionRows },
-    { data: opportunityRows },
-    { data: profileRows },
-    { data: pipelineRunRows },
-    { data: briefingRows },
+    { data: signals, error: signalsError },
+    { data: interactions, error: interactionsError },
+    { data: workItems, error: workItemsError },
+    { data: opportunities, error: opportunitiesError },
   ] = await Promise.all([
     supabase
       .from("signals")
-      .select("id, summary, category, severity, created_at")
-      .eq("system_id", systemId)
-      .order("created_at", { ascending: false })
+      .select("id, system_id, summary, category, severity, created_at")
+      .eq("system_id", system.id)
+      .gte("created_at", startIso)
       .returns<SignalRow[]>(),
     supabase
-      .from("documents")
-      .select("id, title, crawled_at")
-      .eq("system_id", systemId)
-      .eq("source_type", "news")
-      .order("crawled_at", { ascending: false })
-      .returns<NewsRow[]>(),
-    supabase
-      .from("documents")
-      .select("id, title, crawled_at")
-      .eq("system_id", systemId)
-      .neq("source_type", "news")
-      .order("crawled_at", { ascending: false })
-      .returns<DocumentRow[]>(),
-    supabase
       .from("interactions")
-      .select("id, subject, summary, occurred_at")
-      .eq("system_id", systemId)
-      .order("occurred_at", { ascending: false })
+      .select("id, system_id, channel, subject, summary, occurred_at, next_step_due_at")
+      .eq("system_id", system.id)
+      .gte("occurred_at", startIso)
       .returns<InteractionRow[]>(),
     supabase
+      .from("work_items")
+      .select("id, system_id, source_type, status, title, description, due_at, created_at, updated_at")
+      .eq("system_id", system.id)
+      .gte("created_at", startIso)
+      .returns<WorkItemRow[]>(),
+    supabase
       .from("opportunities")
-      .select("id, title, status, created_at")
-      .eq("system_id", systemId)
-      .order("created_at", { ascending: false })
+      .select("id, system_id, title, status, created_at, updated_at")
+      .eq("system_id", system.id)
+      .gte("created_at", startIso)
       .returns<OpportunityRow[]>(),
-    supabase
-      .from("system_profiles")
-      .select("id, summary, created_at")
-      .eq("system_id", systemId)
-      .order("created_at", { ascending: false })
-      .returns<SystemProfileRow[]>(),
-    supabase
-      .from("pipeline_runs")
-      .select("id, status, created_at")
-      .eq("system_id", systemId)
-      .order("created_at", { ascending: false })
-      .returns<PipelineRunRow[]>(),
-    supabase
-      .from("daily_briefings")
-      .select("id, created_at")
-      .eq("system_id", systemId)
-      .order("created_at", { ascending: false })
-      .returns<DailyBriefingRow[]>(),
   ]);
 
-  const events: TimelineEvent[] = [];
+  // Handle errors gracefully - log and proceed with partial data
+  if (signalsError) {
+    log("error", "Error fetching signals", { systemSlug, systemId: system.id, error: signalsError });
+  }
+  if (interactionsError) {
+    log("error", "Error fetching interactions", { systemSlug, systemId: system.id, error: interactionsError });
+  }
+  if (workItemsError) {
+    log("error", "Error fetching work items", { systemSlug, systemId: system.id, error: workItemsError });
+  }
+  if (opportunitiesError) {
+    log("error", "Error fetching opportunities", { systemSlug, systemId: system.id, error: opportunitiesError });
+  }
 
-  // Normalize signals
-  (signalRows ?? []).forEach((row) => {
-    if (row.created_at) {
-      events.push({
-        type: "signal",
-        title: row.summary ?? "Signal",
-        description: `${row.severity ?? "Unknown"} severity - ${row.category ?? "Unknown"} category`,
-        timestamp: row.created_at,
-        metadata: {
-          severity: row.severity,
-          category: row.category,
-        },
-      });
-    }
-  });
+  // 4. Map to unified TimelineItem[]
+  const signalItems: TimelineItem[] = (signals ?? []).map((s) => ({
+    id: s.id,
+    type: "signal",
+    systemId: s.system_id,
+    occurredAt: s.created_at,
+    title: s.summary ?? s.category ?? "Signal",
+    description: s.summary,
+    meta: {
+      category: s.category,
+      severity: s.severity,
+    },
+  }));
 
-  // Normalize news
-  (newsRows ?? []).forEach((row) => {
-    if (row.crawled_at) {
-      events.push({
-        type: "news",
-        title: row.title ?? "News article",
-        timestamp: row.crawled_at,
-      });
-    }
-  });
+  const interactionItems: TimelineItem[] = (interactions ?? []).map((ix) => ({
+    id: ix.id,
+    type: "interaction",
+    systemId: ix.system_id,
+    occurredAt: ix.occurred_at,
+    title: ix.subject || ix.channel || "Interaction",
+    description: ix.summary,
+    meta: {
+      channel: ix.channel,
+      nextStepDueAt: ix.next_step_due_at,
+    },
+  }));
 
-  // Normalize documents (non-news)
-  (documentRows ?? []).forEach((row) => {
-    if (row.crawled_at) {
-      events.push({
-        type: "document",
-        title: row.title ?? "Document",
-        timestamp: row.crawled_at,
-      });
-    }
-  });
+  const workItemItems: TimelineItem[] = (workItems ?? []).map((w) => ({
+    id: w.id,
+    type: "work_item",
+    systemId: w.system_id,
+    occurredAt: w.created_at, // or updated_at if you want latest movement
+    title: w.title,
+    description: w.description,
+    meta: {
+      status: w.status,
+      sourceType: w.source_type,
+      dueAt: w.due_at,
+      updatedAt: w.updated_at,
+    },
+  }));
 
-  // Normalize interactions
-  (interactionRows ?? []).forEach((row) => {
-    if (row.occurred_at) {
-      events.push({
-        type: "interaction",
-        title: row.subject ?? "Interaction",
-        description: row.summary ?? undefined,
-        timestamp: row.occurred_at,
-      });
-    }
-  });
+  const opportunityItems: TimelineItem[] = (opportunities ?? []).map((o) => ({
+    id: o.id,
+    type: "opportunity",
+    systemId: o.system_id,
+    occurredAt: o.updated_at ?? o.created_at,
+    title: o.title,
+    description: o.status,
+    meta: {
+      status: o.status,
+    },
+  }));
 
-  // Normalize opportunities
-  (opportunityRows ?? []).forEach((row) => {
-    if (row.created_at) {
-      events.push({
-        type: "opportunity",
-        title: row.title ?? "Opportunity",
-        description: `Status: ${row.status ?? "Unknown"}`,
-        timestamp: row.created_at,
-        metadata: {
-          status: row.status,
-        },
-      });
-    }
-  });
+  // 5. Merge & sort
+  const allItems = [
+    ...signalItems,
+    ...interactionItems,
+    ...workItemItems,
+    ...opportunityItems,
+  ];
 
-  // Normalize system profile updates
-  (profileRows ?? []).forEach((row) => {
-    if (row.created_at) {
-      const executiveSummary =
-        typeof row.summary === "object" && row.summary !== null && "executive_summary" in row.summary
-          ? (row.summary as { executive_summary?: string }).executive_summary
-          : undefined;
-      events.push({
-        type: "profile",
-        title: "System profile updated",
-        description: executiveSummary ?? "System profile generated",
-        timestamp: row.created_at,
-      });
-    }
-  });
+  allItems.sort((a, b) =>
+    a.occurredAt < b.occurredAt ? -1 : a.occurredAt > b.occurredAt ? 1 : 0
+  );
 
-  // Normalize pipeline runs
-  (pipelineRunRows ?? []).forEach((row) => {
-    if (row.created_at) {
-      events.push({
-        type: "pipeline_run",
-        title: `Pipeline run - ${row.status}`,
-        timestamp: row.created_at,
-        metadata: {
-          status: row.status,
-        },
-      });
-    }
-  });
+  // Apply limit (slice from end to show most recent)
+  const limit = options?.limit ?? 200;
+  const sliced = allItems.slice(-limit);
 
-  // Normalize daily briefings
-  (briefingRows ?? []).forEach((row) => {
-    if (row.created_at) {
-      events.push({
-        type: "daily_briefing",
-        title: "Daily briefing generated",
-        timestamp: row.created_at,
-      });
-    }
-  });
-
-  // Sort descending by timestamp
-  events.sort((a, b) => {
-    const timeA = new Date(a.timestamp).getTime();
-    const timeB = new Date(b.timestamp).getTime();
-    return timeB - timeA;
-  });
-
-  return events;
+  // 6. Return
+  return {
+    systemId: system.id,
+    slug: system.slug,
+    name: system.name,
+    items: sliced,
+  };
 }
-

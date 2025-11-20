@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
+import { parseJsonBody, validateQuery } from "@/lib/api/validate";
 import { getSalesBriefingContext } from "@/lib/getSalesBriefingContext";
-import { logger } from "@/lib/logger";
-import { createResponse, extractTextFromResponse } from "@/lib/openaiClient";
+import { capPromptLength, createResponse, extractTextFromResponse } from "@/lib/openaiClient";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
+
+// Use Node.js runtime for OpenAI and Supabase integrations
+export const runtime = "nodejs";
 
 type SalesBriefingSummary = {
   headline: string;
@@ -20,9 +27,15 @@ type SalesBriefingSummary = {
 };
 
 export async function GET(request: Request) {
+  const ctx = createRequestContext("/api/sales-briefing");
+  ctx.logInfo("Sales briefing fetch request received");
+
   try {
-    const { searchParams } = new URL(request.url);
-    const date = searchParams.get("date");
+    const salesBriefingGetSchema = z.object({
+      date: z.string().optional(),
+    });
+
+    const { date } = validateQuery(request.url, salesBriefingGetSchema);
 
     const supabase = createServerSupabaseClient();
 
@@ -30,70 +43,81 @@ export async function GET(request: Request) {
       // Fetch briefing for specific date
       const { data: briefing, error } = await supabase
         .from("sales_briefings")
-        .select("*")
+        .select("id, generated_for_date, summary, created_at")
         .eq("generated_for_date", date)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
       if (error) {
-        logger.error(error, "Failed to fetch briefing");
-        return NextResponse.json(
-          { error: "fetch_failed" },
-          { status: 500 },
-        );
+        ctx.logError(error, "Failed to fetch briefing", { date });
+        return apiError(500, "fetch_failed", "Failed to fetch briefing");
       }
 
-      return NextResponse.json({ briefing });
+      ctx.logInfo("Sales briefing fetched successfully", { date, hasBriefing: !!briefing });
+      return apiSuccess({ briefing });
     } else {
       // Fetch most recent briefing
       const { data: briefing, error } = await supabase
         .from("sales_briefings")
-        .select("*")
+        .select("id, generated_for_date, summary, created_at")
         .order("generated_for_date", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
 
       if (error) {
-        logger.error(error, "Failed to fetch briefing");
-        return NextResponse.json(
-          { error: "fetch_failed" },
-          { status: 500 },
-        );
+        ctx.logError(error, "Failed to fetch briefing");
+        return apiError(500, "fetch_failed", "Failed to fetch briefing");
       }
 
-      return NextResponse.json({ briefing });
+      ctx.logInfo("Sales briefing fetched successfully", { hasBriefing: !!briefing });
+      return apiSuccess({ briefing });
     }
   } catch (error) {
-    logger.error(error, "GET /api/sales-briefing error");
-    return NextResponse.json(
-      { error: "unexpected_error" },
-      { status: 500 },
-    );
+    if (error instanceof NextResponse) {
+      return error;
+    }
+    ctx.logError(error, "GET /api/sales-briefing error");
+    return apiError(500, "unexpected_error", "An unexpected error occurred");
   }
 }
 
 export async function POST(request: Request) {
-  try {
-    let forDate: Date;
+  const ctx = createRequestContext("/api/sales-briefing");
+  ctx.logInfo("Sales briefing generation request received");
 
-    try {
-      const body = (await request.json()) as { date?: string };
-      if (body?.date) {
-        forDate = new Date(body.date);
-        if (isNaN(forDate.getTime())) {
-          return NextResponse.json(
-            { ok: false, error: "invalid_date" },
-            { status: 400 },
-          );
-        }
-      } else {
-        // Default to yesterday in UTC
-        forDate = new Date();
-        forDate.setUTCDate(forDate.getUTCDate() - 1);
-      }
-    } catch {
+  const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+  const rateLimitResult = await checkRateLimit({
+    key: `sales-briefing:${ip}`,
+    limit: 5,
+    windowMs: 60_000,
+  });
+
+  if (!rateLimitResult.allowed) {
+    ctx.logError(new Error("Rate limit exceeded"), "Rate limit exceeded", { ip, resetAt: rateLimitResult.resetAt });
+    return apiError(429, "rate_limited", "Rate limit exceeded.");
+  }
+
+  try {
+
+    const salesBriefingPostSchema = z.object({
+      date: z.string().optional().refine(
+        (val: string | undefined) => {
+          if (!val) return true;
+          const date = new Date(val);
+          return !isNaN(date.getTime());
+        },
+        { message: "Invalid date format" },
+      ),
+    });
+
+    const body = await parseJsonBody(request, salesBriefingPostSchema);
+
+    let forDate: Date;
+    if (body.date) {
+      forDate = new Date(body.date);
+    } else {
       // Default to yesterday in UTC
       forDate = new Date();
       forDate.setUTCDate(forDate.getUTCDate() - 1);
@@ -276,20 +300,20 @@ export async function POST(request: Request) {
       }),
     ].join("\n");
 
+    // Cap prompt length to prevent excessive token usage
+    const cappedPrompt = capPromptLength(prompt);
+
     // Call OpenAI
     const response = await createResponse({
-      prompt,
+      prompt: cappedPrompt,
       format: "json_object",
     });
 
     const rawOutput = extractTextFromResponse(response);
 
     if (!rawOutput) {
-      logger.error("OpenAI response missing text output");
-      return NextResponse.json(
-        { ok: false, error: "generation_failed" },
-        { status: 502 },
-      );
+      ctx.logError(new Error("OpenAI response missing text output"), "OpenAI response missing text output", { forDate: context.forDate });
+      return apiError(502, "generation_failed", "Failed to generate briefing");
     }
 
     let parsed: SalesBriefingSummary;
@@ -297,11 +321,8 @@ export async function POST(request: Request) {
     try {
       parsed = JSON.parse(rawOutput) as SalesBriefingSummary;
     } catch (error) {
-      logger.error(error, "Failed to parse briefing JSON", rawOutput);
-      return NextResponse.json(
-        { ok: false, error: "generation_failed" },
-        { status: 502 },
-      );
+      ctx.logError(error, "Failed to parse briefing JSON", { rawOutput, forDate: context.forDate });
+      return apiError(502, "generation_failed", "Failed to parse briefing response");
     }
 
     // Validate structure
@@ -313,11 +334,8 @@ export async function POST(request: Request) {
       !Array.isArray(parsed.suggested_todays_focus) ||
       !Array.isArray(parsed.risks_or_watch_items)
     ) {
-      logger.error("Invalid briefing structure", parsed);
-      return NextResponse.json(
-        { ok: false, error: "generation_failed" },
-        { status: 502 },
-      );
+      ctx.logError(new Error("Invalid briefing structure"), "Invalid briefing structure", { parsed, forDate: context.forDate });
+      return apiError(502, "generation_failed", "Invalid briefing structure");
     }
 
     // Insert into database
@@ -327,27 +345,22 @@ export async function POST(request: Request) {
         generated_for_date: context.forDate,
         summary: parsed,
       })
-      .select("*")
+      .select("id, generated_for_date, summary, created_at")
       .single();
 
     if (insertError || !inserted) {
-      logger.error(insertError, "Failed to insert sales briefing");
-      return NextResponse.json(
-        { ok: false, error: "generation_failed" },
-        { status: 500 },
-      );
+      ctx.logError(insertError, "Failed to insert sales briefing", { forDate: context.forDate });
+      return apiError(500, "generation_failed", "Failed to save briefing");
     }
 
-    return NextResponse.json({
-      ok: true,
-      briefing: inserted,
-    });
+    ctx.logInfo("Sales briefing generated successfully", { forDate: context.forDate, briefingId: inserted.id });
+    return apiSuccess({ briefing: inserted });
   } catch (error) {
-    logger.error(error, "POST /api/sales-briefing error");
-    return NextResponse.json(
-      { ok: false, error: "generation_failed" },
-      { status: 500 },
-    );
+    if (error instanceof NextResponse) {
+      return error;
+    }
+    ctx.logError(error, "POST /api/sales-briefing error");
+    return apiError(500, "generation_failed", "An unexpected error occurred");
   }
 }
 

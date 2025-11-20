@@ -1,10 +1,15 @@
-import { NextResponse } from "next/server";
+import { z } from "zod";
 
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
+import { parseJsonBody, validateQuery } from "@/lib/api/validate";
 import { getSystemProfileContext } from "@/lib/getSystemProfileContext";
-import { logger } from "@/lib/logger";
-import { createResponse, extractTextFromResponse } from "@/lib/openaiClient";
-import { rateLimit } from "@/lib/rateLimit";
+import { capPromptLength, createResponse, extractTextFromResponse } from "@/lib/openaiClient";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
+
+// Use Node.js runtime for OpenAI and Supabase integrations
+export const runtime = "nodejs";
 
 type SystemProfilePayload = {
   executive_summary: string;
@@ -17,29 +22,29 @@ type SystemProfilePayload = {
 };
 
 export async function POST(request: Request) {
+  const ctx = createRequestContext("/api/system-profile");
+  ctx.logInfo("System profile generation request received");
+
   const ip = request.headers.get("x-forwarded-for") ?? "unknown";
-  const ok = rateLimit({
-    key: `post:${ip}:${request.url}`,
+  const rateLimitResult = await checkRateLimit({
+    key: `system-profile:${ip}`,
     limit: 5,
     windowMs: 60_000,
   });
 
-  if (!ok) {
-    logger.warn("Rate limit exceeded", { ip, url: request.url });
-    return new Response("Too Many Requests", { status: 429 });
+  if (!rateLimitResult.allowed) {
+    ctx.logError(new Error("Rate limit exceeded"), "Rate limit exceeded", { ip, resetAt: rateLimitResult.resetAt });
+    return apiError(429, "rate_limited", "Rate limit exceeded.");
   }
 
   try {
     const supabase = createServerSupabaseClient();
 
-    const body = (await request.json()) as { slug?: string };
+    const postSchema = z.object({
+      slug: z.string().min(1).max(100),
+    });
 
-    if (!body.slug) {
-      return NextResponse.json(
-        { ok: false, error: "slug_required" },
-        { status: 400 },
-      );
-    }
+    const body = await parseJsonBody(request, postSchema);
 
     const { data: system, error: systemError } = await supabase
       .from("systems")
@@ -48,10 +53,7 @@ export async function POST(request: Request) {
       .maybeSingle<{ id: string; slug: string; name: string; website: string | null }>();
 
     if (systemError || !system) {
-      return NextResponse.json(
-        { ok: false, error: "system_not_found" },
-        { status: 404 },
-      );
+      return apiError(404, "system_not_found", "System not found");
     }
 
     const context = await getSystemProfileContext(supabase, system.id);
@@ -118,18 +120,18 @@ export async function POST(request: Request) {
       .filter(Boolean)
       .join("\n\n");
 
+    // Cap prompt length to prevent excessive token usage
+    const cappedPrompt = capPromptLength(prompt);
+
     const response = await createResponse({
-      prompt,
+      prompt: cappedPrompt,
       format: "json_object",
     });
 
     const rawOutput = extractTextFromResponse(response);
 
     if (!rawOutput) {
-      return NextResponse.json(
-        { ok: false, error: "model_failure" },
-        { status: 502 },
-      );
+      return apiError(502, "generation_failed", "Model response missing");
     }
 
     let parsed: SystemProfilePayload;
@@ -137,11 +139,8 @@ export async function POST(request: Request) {
     try {
       parsed = JSON.parse(rawOutput) as SystemProfilePayload;
     } catch (error) {
-      logger.error(error, "Failed to parse model output", rawOutput);
-      return NextResponse.json(
-        { ok: false, error: "model_failure" },
-        { status: 502 },
-      );
+      ctx.logError(error, "Failed to parse model output", { rawOutput, systemId: system.id });
+      return apiError(502, "generation_failed", "Failed to parse model output");
     }
 
     // Validate structure
@@ -154,10 +153,7 @@ export async function POST(request: Request) {
       !Array.isArray(parsed.opportunities_summary) ||
       !Array.isArray(parsed.risk_factors)
     ) {
-      return NextResponse.json(
-        { ok: false, error: "model_failure" },
-        { status: 502 },
-      );
+      return apiError(502, "generation_failed", "Invalid response structure");
     }
 
     const { data: inserted, error: insertError } = await supabase
@@ -170,37 +166,34 @@ export async function POST(request: Request) {
       .maybeSingle<{ id: string }>();
 
     if (insertError || !inserted) {
-      logger.error(insertError, "Failed to store system profile");
-      return NextResponse.json(
-        { ok: false, error: "model_failure" },
-        { status: 500 },
-      );
+      ctx.logError(insertError, "Failed to store system profile", { systemId: system.id });
+      return apiError(500, "generation_failed", "Failed to save system profile");
     }
 
-    return NextResponse.json({
-      ok: true,
+    ctx.logInfo("System profile generated successfully", { systemId: system.id, profileId: inserted.id });
+    return apiSuccess({
       profileId: inserted.id,
     });
   } catch (error) {
-    logger.error(error, "System profile generation error");
-    return NextResponse.json(
-      { ok: false, error: "model_failure" },
-      { status: 500 },
-    );
+    if (error instanceof Response) {
+      return error;
+    }
+    ctx.logError(error, "System profile generation error");
+    return apiError(500, "generation_failed", "An unexpected error occurred");
   }
 }
 
 export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const slug = searchParams.get("slug");
+  const ctx = createRequestContext("/api/system-profile");
+  ctx.logInfo("System profile fetch request received");
 
-    if (!slug) {
-      return NextResponse.json(
-        { error: "slug query parameter is required" },
-        { status: 400 },
-      );
-    }
+  try {
+    const getSchema = z.object({
+      slug: z.string().min(1).max(100),
+    });
+
+    const validated = validateQuery(request.url, getSchema);
+    const slug = validated.slug;
 
     const supabase = createServerSupabaseClient();
 
@@ -211,15 +204,12 @@ export async function GET(request: Request) {
       .maybeSingle<{ id: string }>();
 
     if (systemError || !system) {
-      return NextResponse.json(
-        { error: "system_not_found" },
-        { status: 404 },
-      );
+      return apiError(404, "system_not_found", "System not found");
     }
 
     const { data: profile, error: profileError } = await supabase
       .from("system_profiles")
-      .select("*")
+      .select("id, system_id, summary, created_at")
       .eq("system_id", system.id)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -231,20 +221,18 @@ export async function GET(request: Request) {
       }>();
 
     if (profileError) {
-      logger.error(profileError, "Failed to fetch system profile");
-      return NextResponse.json(
-        { error: "fetch_failed" },
-        { status: 500 },
-      );
+      ctx.logError(profileError, "Failed to fetch system profile", { systemId: system.id });
+      return apiError(500, "fetch_failed", "Failed to fetch system profile");
     }
 
-    return NextResponse.json({ profile: profile ?? null });
+    ctx.logInfo("System profile fetched successfully", { systemId: system.id, hasProfile: !!profile });
+    return apiSuccess({ profile: profile ?? null });
   } catch (error) {
-    logger.error(error, "System profile fetch error");
-    return NextResponse.json(
-      { error: "unexpected_error" },
-      { status: 500 },
-    );
+    if (error instanceof Response) {
+      return error;
+    }
+    ctx.logError(error, "System profile fetch error");
+    return apiError(500, "unexpected_error", "An unexpected error occurred");
   }
 }
 

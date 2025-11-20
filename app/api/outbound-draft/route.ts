@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
+import { parseJsonBody } from "@/lib/api/validate";
 import { getOutboundContext } from "@/lib/getOutboundContext";
-import { logger } from "@/lib/logger";
 import { createResponse, extractTextFromResponse } from "@/lib/openaiClient";
-import { rateLimit } from "@/lib/rateLimit";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
+
+// Use Node.js runtime for OpenAI and Supabase integrations
+export const runtime = "nodejs";
 
 type EmailDraft = {
   subject: string;
@@ -26,40 +32,31 @@ type OutboundPlaybookPayload = {
 };
 
 export async function POST(request: Request) {
+  const ctx = createRequestContext("/api/outbound-draft");
+  ctx.logInfo("Outbound draft generation request received");
+
   const ip = request.headers.get("x-forwarded-for") ?? "unknown";
-  const ok = rateLimit({
-    key: `post:${ip}:${request.url}`,
+  const rateLimitResult = await checkRateLimit({
+    key: `outbound-draft:${ip}`,
     limit: 5,
     windowMs: 60_000,
   });
 
-  if (!ok) {
-    logger.warn("Rate limit exceeded", { ip, url: request.url });
-    return new Response("Too Many Requests", { status: 429 });
+  if (!rateLimitResult.allowed) {
+    ctx.logError(new Error("Rate limit exceeded"), "Rate limit exceeded", { ip, resetAt: rateLimitResult.resetAt });
+    return apiError(429, "rate_limited", "Rate limit exceeded.");
   }
 
-  const supabase = createServerSupabaseClient();
-
   try {
-    const body = (await request.json()) as {
-      slug?: string;
-      kind?: "email" | "call";
-      note?: string;
-    };
+    const supabase = createServerSupabaseClient();
 
-    if (!body.slug) {
-      return NextResponse.json(
-        { ok: false, error: "slug_required" },
-        { status: 400 },
-      );
-    }
+    const postSchema = z.object({
+      slug: z.string().min(1).max(100),
+      kind: z.enum(["email", "call"]),
+      note: z.string().max(2000).optional(),
+    });
 
-    if (!body.kind || (body.kind !== "email" && body.kind !== "call")) {
-      return NextResponse.json(
-        { ok: false, error: "kind_required" },
-        { status: 400 },
-      );
-    }
+    const body = await parseJsonBody(request, postSchema);
 
     const { data: system, error: systemError } = await supabase
       .from("systems")
@@ -68,10 +65,7 @@ export async function POST(request: Request) {
       .maybeSingle<{ id: string; slug: string; name: string }>();
 
     if (systemError || !system) {
-      return NextResponse.json(
-        { ok: false, error: "system_not_found" },
-        { status: 404 },
-      );
+      return apiError(404, "system_not_found", "System not found");
     }
 
     const context = await getOutboundContext(supabase, system.id);
@@ -79,7 +73,7 @@ export async function POST(request: Request) {
     // Optionally fetch latest playbook
     const { data: playbookRow } = await supabase
       .from("outbound_playbooks")
-      .select("*")
+      .select("id, system_id, summary, created_at")
       .eq("system_id", system.id)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -205,11 +199,8 @@ export async function POST(request: Request) {
     const rawOutput = extractTextFromResponse(response);
 
     if (!rawOutput) {
-      logger.error("Model response missing", { systemId: system.id });
-      return NextResponse.json(
-        { ok: false, error: "draft_generation_failed" },
-        { status: 502 },
-      );
+      ctx.logError(new Error("Model response missing"), "Model response missing", { systemId: system.id, kind: body.kind });
+      return apiError(502, "generation_failed", "Failed to generate draft");
     }
 
     let parsed: EmailDraft | CallDraft;
@@ -217,11 +208,8 @@ export async function POST(request: Request) {
     try {
       parsed = JSON.parse(rawOutput) as EmailDraft | CallDraft;
     } catch (error) {
-      logger.error(error, "Failed to parse model output", rawOutput);
-      return NextResponse.json(
-        { ok: false, error: "draft_generation_failed" },
-        { status: 502 },
-      );
+      ctx.logError(error, "Failed to parse model output", { rawOutput, systemId: system.id, kind: body.kind });
+      return apiError(502, "generation_failed", "Failed to parse draft response");
     }
 
     // Validate structure based on kind
@@ -231,14 +219,11 @@ export async function POST(request: Request) {
         typeof emailDraft.subject !== "string" ||
         typeof emailDraft.body !== "string"
       ) {
-        logger.error("Invalid email draft structure", parsed);
-        return NextResponse.json(
-          { ok: false, error: "draft_generation_failed" },
-          { status: 502 },
-        );
+        ctx.logError(new Error("Invalid email draft structure"), "Invalid email draft structure", { parsed, systemId: system.id });
+        return apiError(502, "generation_failed", "Invalid email draft structure");
       }
-      return NextResponse.json({
-        ok: true,
+      ctx.logInfo("Email draft generated successfully", { systemId: system.id });
+      return apiSuccess({
         kind: "email" as const,
         draft: emailDraft,
       });
@@ -250,24 +235,21 @@ export async function POST(request: Request) {
         typeof callDraft.value_narrative !== "string" ||
         typeof callDraft.closing !== "string"
       ) {
-        logger.error("Invalid call draft structure", parsed);
-        return NextResponse.json(
-          { ok: false, error: "draft_generation_failed" },
-          { status: 502 },
-        );
+        ctx.logError(new Error("Invalid call draft structure"), "Invalid call draft structure", { parsed, systemId: system.id });
+        return apiError(502, "generation_failed", "Invalid call draft structure");
       }
-      return NextResponse.json({
-        ok: true,
+      ctx.logInfo("Call draft generated successfully", { systemId: system.id });
+      return apiSuccess({
         kind: "call" as const,
         draft: callDraft,
       });
     }
   } catch (error) {
-    logger.error(error, "Outbound draft generation error");
-    return NextResponse.json(
-      { ok: false, error: "draft_generation_failed" },
-      { status: 500 },
-    );
+    if (error instanceof Response) {
+      return error;
+    }
+    ctx.logError(error, "Outbound draft generation error");
+    return apiError(500, "generation_failed", "An unexpected error occurred");
   }
 }
 

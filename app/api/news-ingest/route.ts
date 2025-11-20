@@ -1,21 +1,16 @@
-import { NextResponse } from "next/server";
-
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
+import { crawlUrl, type FirecrawlPage, type FirecrawlResponse } from "@/lib/firecrawlClient";
 import { hashText } from "@/lib/hash";
-import { logger } from "@/lib/logger";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
-type FirecrawlPage = {
-  url: string;
-  title?: string;
-  content?: string;
-};
-
-type FirecrawlResponse = {
-  success: boolean;
-  pages?: FirecrawlPage[];
-};
+// Use Node.js runtime for Firecrawl and Supabase integrations
+export const runtime = "nodejs";
 
 export async function POST() {
+  const ctx = createRequestContext("/api/news-ingest");
+  ctx.logInfo("News ingest request received");
+
   try {
     const supabase = createServerSupabaseClient();
 
@@ -25,42 +20,14 @@ export async function POST() {
       .eq("active", true);
 
     if (sourcesError || !newsSources || newsSources.length === 0) {
-      return NextResponse.json(
-        { error: "No active news sources found" },
-        { status: 404 },
-      );
-    }
-
-    const apiKey = process.env.FIRECRAWL_API_KEY;
-
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "Firecrawl API key is not configured" },
-        { status: 500 },
-      );
+      return apiError(404, "no_sources", "No active news sources found");
     }
 
     let documentsCreated = 0;
 
     for (const source of newsSources) {
       try {
-        const firecrawlRes = await fetch("https://api.firecrawl.dev/v1/crawl", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({ url: source.url }),
-        });
-
-        if (!firecrawlRes.ok) {
-          logger.error(new Error("Firecrawl request failed"), "Firecrawl request failed", {
-            url: source.url,
-          });
-          continue;
-        }
-
-        const payload = (await firecrawlRes.json()) as FirecrawlResponse;
+        const payload = await crawlUrl(source.url);
         const pages = payload.pages ?? [];
 
         if (!payload.success || pages.length === 0) {
@@ -105,21 +72,25 @@ export async function POST() {
           documentsCreated++;
         }
       } catch (error) {
-        logger.error(error, "Error processing news source", { url: source.url });
+        ctx.logError(error, "Error processing news source", { url: source.url });
         continue;
       }
     }
 
-    return NextResponse.json({
+    ctx.logInfo("News ingestion completed successfully", { sources: newsSources.length, documentsCreated });
+    return apiSuccess({
       sources: newsSources.length,
       documents_created: documentsCreated,
     });
   } catch (error) {
-    logger.error(error, "News ingestion error");
-    return NextResponse.json(
-      { error: "Unexpected server error" },
-      { status: 500 },
-    );
+    ctx.logError(error, "News ingestion error");
+    const errorMessage = error instanceof Error ? error.message : "Unexpected server error";
+
+    if (errorMessage === "Firecrawl API key is not configured") {
+      return apiError(500, "config_error", "Firecrawl API key is not configured");
+    }
+
+    return apiError(500, "ingestion_failed", "Unexpected server error");
   }
 }
 

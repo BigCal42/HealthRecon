@@ -1,10 +1,15 @@
-import { NextResponse } from "next/server";
+import { z } from "zod";
 
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
+import { parseJsonBody, validateQuery } from "@/lib/api/validate";
 import { getSuggestionInputs } from "@/lib/getSuggestionInputs";
-import { logger } from "@/lib/logger";
 import { createResponse, extractTextFromResponse } from "@/lib/openaiClient";
-import { rateLimit } from "@/lib/rateLimit";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
+
+// Use Node.js runtime for OpenAI and Supabase integrations
+export const runtime = "nodejs";
 
 type SuggestionModelOutput = {
   opportunities?: {
@@ -17,28 +22,30 @@ type SuggestionModelOutput = {
 const MAX_ARTICLE_CHARS = 1000;
 
 export async function POST(request: Request) {
+  const ctx = createRequestContext("/api/opportunity-suggestions");
+  ctx.logInfo("Opportunity suggestions generation request received");
+
   const ip = request.headers.get("x-forwarded-for") ?? "unknown";
-  const ok = rateLimit({
-    key: `post:${ip}:${request.url}`,
+  const rateLimitResult = await checkRateLimit({
+    key: `opportunity-suggestions:${ip}`,
     limit: 5,
     windowMs: 60_000,
   });
 
-  if (!ok) {
-    logger.warn("Rate limit exceeded", { ip, url: request.url });
-    return new Response("Too Many Requests", { status: 429 });
+  if (!rateLimitResult.allowed) {
+    ctx.logError(new Error("Rate limit exceeded"), "Rate limit exceeded", { ip, resetAt: rateLimitResult.resetAt });
+    return apiError(429, "rate_limited", "Rate limit exceeded.");
   }
 
   try {
     const supabase = createServerSupabaseClient();
 
-    const body = (await request.json().catch(() => null)) as { slug?: string } | null;
+    const postSchema = z.object({
+      slug: z.string().min(1).max(100),
+    });
 
-    const slug = body?.slug;
-
-    if (!slug) {
-      return NextResponse.json({ error: "slug_required" }, { status: 400 });
-    }
+    const body = await parseJsonBody(request, postSchema);
+    const slug = body.slug;
 
     const { data: system, error: systemError } = await supabase
       .from("systems")
@@ -47,7 +54,7 @@ export async function POST(request: Request) {
       .maybeSingle<{ id: string; name: string }>();
 
     if (systemError || !system) {
-      return NextResponse.json({ error: "system_not_found" }, { status: 404 });
+      return apiError(404, "system_not_found", "System not found");
     }
 
     const { signals, news } = await getSuggestionInputs(supabase, system.id);
@@ -81,8 +88,8 @@ export async function POST(request: Request) {
     const rawOutput = extractTextFromResponse(response);
 
     if (!rawOutput) {
-      logger.error(new Error("Opportunity suggestion model returned no output"));
-      return NextResponse.json({ error: "model_failure" }, { status: 502 });
+      ctx.logError(new Error("Opportunity suggestion model returned no output"), "Model response missing", { systemId: system.id });
+      return apiError(502, "generation_failed", "Model response missing");
     }
 
     let parsed: SuggestionModelOutput;
@@ -90,8 +97,8 @@ export async function POST(request: Request) {
     try {
       parsed = JSON.parse(rawOutput) as SuggestionModelOutput;
     } catch (error) {
-      logger.error(error, "Failed to parse suggestion output", rawOutput);
-      return NextResponse.json({ error: "model_failure" }, { status: 502 });
+      ctx.logError(error, "Failed to parse suggestion output", { rawOutput, systemId: system.id });
+      return apiError(502, "generation_failed", "Failed to parse model output");
     }
 
     const opportunities = Array.isArray(parsed.opportunities)
@@ -115,28 +122,35 @@ export async function POST(request: Request) {
         });
 
       if (insertError) {
-        logger.error(insertError, "Failed to insert suggestion");
+        ctx.logError(insertError, "Failed to insert suggestion", { systemId: system.id, title: opp.title });
         continue;
       }
 
       created += 1;
     }
 
-    return NextResponse.json({ created });
+    ctx.logInfo("Opportunity suggestions generated successfully", { systemId: system.id, created });
+    return apiSuccess({ created });
   } catch (error) {
-    logger.error(error, "Opportunity suggestions POST error");
-    return NextResponse.json({ error: "model_failure" }, { status: 500 });
+    if (error instanceof Response) {
+      return error;
+    }
+    ctx.logError(error, "Opportunity suggestions POST error");
+    return apiError(500, "generation_failed", "An unexpected error occurred");
   }
 }
 
 export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const slug = searchParams.get("slug");
+  const ctx = createRequestContext("/api/opportunity-suggestions");
+  ctx.logInfo("Opportunity suggestions fetch request received");
 
-    if (!slug) {
-      return NextResponse.json({ error: "slug_required" }, { status: 400 });
-    }
+  try {
+    const getSchema = z.object({
+      slug: z.string().min(1).max(100),
+    });
+
+    const validated = validateQuery(request.url, getSchema);
+    const slug = validated.slug;
 
     const supabase = createServerSupabaseClient();
 
@@ -147,7 +161,7 @@ export async function GET(request: Request) {
       .maybeSingle<{ id: string }>();
 
     if (systemError || !system) {
-      return NextResponse.json({ error: "system_not_found" }, { status: 404 });
+      return apiError(404, "system_not_found", "System not found");
     }
 
     const { data: suggestions, error: suggestionsError } = await supabase
@@ -158,14 +172,18 @@ export async function GET(request: Request) {
       .limit(20);
 
     if (suggestionsError) {
-      logger.error(suggestionsError, "Failed to fetch opportunity suggestions");
-      return NextResponse.json({ error: "fetch_failed" }, { status: 500 });
+      ctx.logError(suggestionsError, "Failed to fetch opportunity suggestions", { systemId: system.id });
+      return apiError(500, "fetch_failed", "Failed to fetch opportunity suggestions");
     }
 
-    return NextResponse.json({ suggestions: suggestions ?? [] });
+    ctx.logInfo("Opportunity suggestions fetched successfully", { systemId: system.id, count: suggestions?.length ?? 0 });
+    return apiSuccess({ suggestions: suggestions ?? [] });
   } catch (error) {
-    logger.error(error, "Opportunity suggestions GET error");
-    return NextResponse.json({ error: "unexpected_error" }, { status: 500 });
+    if (error instanceof Response) {
+      return error;
+    }
+    ctx.logError(error, "Opportunity suggestions GET error");
+    return apiError(500, "unexpected_error", "An unexpected error occurred");
   }
 }
 

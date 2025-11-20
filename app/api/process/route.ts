@@ -1,30 +1,46 @@
-import { NextResponse } from "next/server";
+import { z } from "zod";
 
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
+import { parseJsonBody } from "@/lib/api/validate";
 import { BILH_SLUG } from "@/config/constants";
-import { logger } from "@/lib/logger";
 import { runProcessForSystem } from "@/lib/pipeline/process";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
-export async function POST(request: Request) {
-  try {
-    let slug = BILH_SLUG;
+// Use Node.js runtime for OpenAI and Supabase integrations
+export const runtime = "nodejs";
 
+export async function POST(request: Request) {
+  const ctx = createRequestContext("/api/process");
+  ctx.logInfo("Process request received");
+
+  try {
+    const supabase = createServerSupabaseClient();
+
+    const postSchema = z.object({
+      slug: z.string().min(1).max(100).optional(),
+    });
+
+    let slug = BILH_SLUG;
     try {
-      const body = (await request.json()) as { slug?: string };
-      if (body && typeof body === "object" && typeof body.slug === "string") {
+      const body = await parseJsonBody(request, postSchema);
+      if (body.slug) {
         slug = body.slug;
       }
     } catch {
-      // Ignore invalid / missing JSON bodies, default slug applies.
+      // If validation fails, use default slug
     }
 
-    const supabase = createServerSupabaseClient();
     const result = await runProcessForSystem(supabase, slug);
 
-    return NextResponse.json({ slug, processed: result.processed });
+    ctx.logInfo("Process completed successfully", { slug, processed: result.processed });
+    return apiSuccess({ slug, processed: result.processed });
   } catch (error) {
-    logger.error(error, "Processing error");
-    return NextResponse.json({ processed: 0 });
+    if (error instanceof Response) {
+      return error;
+    }
+    ctx.logError(error, "Processing error");
+    return apiError(500, "processing_failed", "An unexpected error occurred");
   }
 }
 

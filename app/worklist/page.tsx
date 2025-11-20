@@ -1,102 +1,42 @@
-import Link from "next/link";
-
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
-import { getWorklist } from "@/lib/getWorklist";
+import { getWorkItems } from "@/lib/worklist";
+import { WorklistClient } from "@/components/WorklistClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function WorklistPage() {
   const supabase = createServerSupabaseClient();
-  const { overdueInteractions, upcomingInteractions, recentActivity } =
-    await getWorklist(supabase);
+  const rows = await getWorkItems(supabase, { status: "open" });
+
+  // Fetch systems to get slug and name
+  const systemIds = [...new Set(rows.map((row) => row.system_id))];
+  const { data: systems } = await supabase
+    .from("systems")
+    .select("id, slug, name")
+    .in("id", systemIds);
+
+  const systemMap = new Map<string, { slug: string; name: string }>();
+  (systems ?? []).forEach((system) => {
+    systemMap.set(system.id, { slug: system.slug, name: system.name });
+  });
+
+  // Map work items with system info
+  const items = rows.map((row) => {
+    const system = systemMap.get(row.system_id);
+    return {
+      id: row.id,
+      systemSlug: system?.slug ?? "",
+      systemName: system?.name ?? "",
+      title: row.title,
+      description: row.description,
+      status: row.status,
+      dueAt: row.due_at,
+    };
+  });
 
   return (
     <main style={{ padding: "2rem" }}>
-      <h1>Worklist</h1>
-      <p>Your current follow-ups and recent system activity.</p>
-      <p>
-        <Link href="/">Home</Link> | <Link href="/dashboard">Dashboard</Link>
-      </p>
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2>Overdue Next Steps</h2>
-        {overdueInteractions.length === 0 ? (
-          <p>No overdue next steps. 🎯</p>
-        ) : (
-          <ul>
-            {overdueInteractions.map((item) => (
-              <li key={item.id} style={{ marginBottom: "1rem" }}>
-                <p>
-                  <strong>
-                    {item.systemName} ({item.channel})
-                  </strong>{" "}
-                  –{" "}
-                  <Link href={`/systems/${item.systemSlug}`}>
-                    /systems/{item.systemSlug}
-                  </Link>
-                </p>
-                <p>{item.subject ?? "(No subject)"}</p>
-                <p>
-                  Next step: {item.nextStep ?? "(none)"} <br />
-                  Due: {item.nextStepDueAt ? new Date(item.nextStepDueAt).toLocaleString() : "N/A"}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2>Upcoming Next Steps (Next 7 Days)</h2>
-        {upcomingInteractions.length === 0 ? (
-          <p>No upcoming next steps.</p>
-        ) : (
-          <ul>
-            {upcomingInteractions.map((item) => (
-              <li key={item.id} style={{ marginBottom: "1rem" }}>
-                <p>
-                  <strong>
-                    {item.systemName} ({item.channel})
-                  </strong>{" "}
-                  –{" "}
-                  <Link href={`/systems/${item.systemSlug}`}>
-                    /systems/{item.systemSlug}
-                  </Link>
-                </p>
-                <p>{item.subject ?? "(No subject)"}</p>
-                <p>
-                  Next step: {item.nextStep ?? "(none)"} <br />
-                  Due: {item.nextStepDueAt ? new Date(item.nextStepDueAt).toLocaleString() : "N/A"}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2>Recently Active Systems (Last 7 Days)</h2>
-        {recentActivity.length === 0 ? (
-          <p>No recent activity.</p>
-        ) : (
-          <ul>
-            {recentActivity.map((item) => (
-              <li key={item.systemId} style={{ marginBottom: "1rem" }}>
-                <p>
-                  <strong>{item.systemName}</strong> –{" "}
-                  <Link href={`/systems/${item.systemSlug}`}>
-                    /systems/{item.systemSlug}
-                  </Link>
-                </p>
-                <p>
-                  Last activity: {new Date(item.lastActivityAt).toLocaleString()} ({item.activityKind})
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <WorklistClient initialItems={items} />
     </main>
   );
 }
-

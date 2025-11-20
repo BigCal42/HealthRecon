@@ -1,25 +1,28 @@
-import { NextResponse } from "next/server";
+import { z } from "zod";
 
-import { logger } from "@/lib/logger";
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
+import { parseJsonBody } from "@/lib/api/validate";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
+// Use Node.js runtime for Supabase integration
+export const runtime = "nodejs";
+
 export async function POST(request: Request) {
+  const ctx = createRequestContext("/api/opportunity-suggestions/accept");
+  ctx.logInfo("Opportunity suggestion accept request received");
+
   try {
     const supabase = createServerSupabaseClient();
-    const body = (await request.json().catch(() => null)) as {
-      slug?: string;
-      suggestionId?: string;
-    } | null;
 
-    const slug = body?.slug;
-    const suggestionId = body?.suggestionId;
+    const postSchema = z.object({
+      slug: z.string().min(1).max(100),
+      suggestionId: z.string().uuid(),
+    });
 
-    if (!slug || !suggestionId) {
-      return NextResponse.json(
-        { ok: false, error: "slug_and_suggestion_required" },
-        { status: 400 },
-      );
-    }
+    const body = await parseJsonBody(request, postSchema);
+    const slug = body.slug;
+    const suggestionId = body.suggestionId;
 
     const { data: system, error: systemError } = await supabase
       .from("systems")
@@ -28,12 +31,12 @@ export async function POST(request: Request) {
       .maybeSingle<{ id: string }>();
 
     if (systemError || !system) {
-      return NextResponse.json({ ok: false, error: "system_not_found" }, { status: 404 });
+      return apiError(404, "system_not_found", "System not found");
     }
 
     const { data: suggestion, error: suggestionError } = await supabase
       .from("opportunity_suggestions")
-      .select("*")
+      .select("id, system_id, title, description, source_kind, accepted")
       .eq("id", suggestionId)
       .maybeSingle<{
         id: string;
@@ -45,14 +48,11 @@ export async function POST(request: Request) {
       }>();
 
     if (suggestionError || !suggestion || suggestion.system_id !== system.id) {
-      return NextResponse.json(
-        { ok: false, error: "suggestion_not_found" },
-        { status: 404 },
-      );
+      return apiError(404, "suggestion_not_found", "Suggestion not found");
     }
 
     if (suggestion.accepted) {
-      return NextResponse.json({ ok: true, opportunityId: suggestionId });
+      return apiSuccess({ opportunityId: suggestionId });
     }
 
     const { data: inserted, error: insertError } = await supabase
@@ -69,8 +69,8 @@ export async function POST(request: Request) {
       .maybeSingle<{ id: string }>();
 
     if (insertError || !inserted) {
-      logger.error(insertError, "Failed to create opportunity from suggestion");
-      return NextResponse.json({ ok: false, error: "insert_failed" }, { status: 500 });
+      ctx.logError(insertError, "Failed to create opportunity from suggestion", { slug, suggestionId, systemId: system.id });
+      return apiError(500, "insert_failed", "Failed to create opportunity");
     }
 
     const { error: updateError } = await supabase
@@ -82,14 +82,18 @@ export async function POST(request: Request) {
       .eq("id", suggestionId);
 
     if (updateError) {
-      logger.error(updateError, "Failed to mark suggestion accepted");
-      return NextResponse.json({ ok: false, error: "update_failed" }, { status: 500 });
+      ctx.logError(updateError, "Failed to mark suggestion accepted", { slug, suggestionId, opportunityId: inserted.id });
+      return apiError(500, "update_failed", "Failed to mark suggestion accepted");
     }
 
-    return NextResponse.json({ ok: true, opportunityId: inserted.id });
+    ctx.logInfo("Opportunity suggestion accepted successfully", { slug, suggestionId, opportunityId: inserted.id });
+    return apiSuccess({ opportunityId: inserted.id });
   } catch (error) {
-    logger.error(error, "Opportunity suggestion accept error");
-    return NextResponse.json({ ok: false, error: "unexpected_error" }, { status: 500 });
+    if (error instanceof Response) {
+      return error;
+    }
+    ctx.logError(error, "Opportunity suggestion accept error");
+    return apiError(500, "unexpected_error", "An unexpected error occurred");
   }
 }
 

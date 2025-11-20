@@ -1,10 +1,16 @@
-import { NextResponse } from "next/server";
+import { z } from "zod";
 
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
+import { parseJsonBody } from "@/lib/api/validate";
 import { BILH_SLUG } from "@/config/constants";
 import { getSystemContext } from "@/lib/getSystemContext";
-import { logger } from "@/lib/logger";
 import { createResponse, extractTextFromResponse } from "@/lib/openaiClient";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
+
+// Use Node.js runtime for OpenAI and Supabase integrations
+export const runtime = "nodejs";
 
 type ComparisonResult = {
   systemA: { summary: string };
@@ -16,18 +22,38 @@ type ComparisonResult = {
 };
 
 export async function POST(request: Request) {
+  const ctx = createRequestContext("/api/compare-systems");
+  ctx.logInfo("Compare systems request received");
+
+  const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+  const rateLimitResult = await checkRateLimit({
+    key: `compare-systems:${ip}`,
+    limit: 5,
+    windowMs: 60_000,
+  });
+
+  if (!rateLimitResult.allowed) {
+    ctx.logError(new Error("Rate limit exceeded"), "Rate limit exceeded", { ip, resetAt: rateLimitResult.resetAt });
+    return apiError(429, "rate_limited", "Rate limit exceeded.");
+  }
+
+  let systemA: string | undefined;
+  let systemB: string | undefined;
+
   try {
     const supabase = createServerSupabaseClient();
 
-    let systemA: string | undefined;
-    let systemB: string | undefined;
+    const postSchema = z.object({
+      systemA: z.string().min(1).max(100).optional(),
+      systemB: z.string().min(1).max(100).optional(),
+    });
 
     try {
-      const body = (await request.json()) as { systemA?: string; systemB?: string };
+      const body = await parseJsonBody(request, postSchema);
       systemA = body.systemA;
       systemB = body.systemB;
     } catch {
-      // Ignore invalid JSON, use defaults
+      // If validation fails, use defaults
     }
 
     // Default systemA to "bilh"
@@ -44,10 +70,7 @@ export async function POST(request: Request) {
         .limit(1);
 
       if (!systems || systems.length === 0) {
-        return NextResponse.json(
-          { error: "system_not_found" },
-          { status: 404 },
-        );
+        return apiError(404, "system_not_found", "No systems found for comparison");
       }
 
       systemB = systems[0].slug;
@@ -69,17 +92,11 @@ export async function POST(request: Request) {
       ]);
 
     if (systemAError || !systemARow) {
-      return NextResponse.json(
-        { error: "system_not_found" },
-        { status: 404 },
-      );
+      return apiError(404, "system_not_found", "System A not found");
     }
 
     if (systemBError || !systemBRow) {
-      return NextResponse.json(
-        { error: "system_not_found" },
-        { status: 404 },
-      );
+      return apiError(404, "system_not_found", "System B not found");
     }
 
     // Get contexts for both systems
@@ -124,10 +141,7 @@ export async function POST(request: Request) {
     const rawOutput = extractTextFromResponse(response);
 
     if (!rawOutput) {
-      return NextResponse.json(
-        { error: "model_failure" },
-        { status: 502 },
-      );
+      return apiError(502, "generation_failed", "Model response missing");
     }
 
     let parsed: ComparisonResult;
@@ -135,11 +149,8 @@ export async function POST(request: Request) {
     try {
       parsed = JSON.parse(rawOutput) as ComparisonResult;
     } catch (error) {
-      logger.error(error, "Failed to parse model output", { rawOutput });
-      return NextResponse.json(
-        { error: "model_failure" },
-        { status: 502 },
-      );
+      ctx.logError(error, "Failed to parse model output", { rawOutput, systemA, systemB });
+      return apiError(502, "generation_failed", "Failed to parse model output");
     }
 
     // Validate structure
@@ -151,19 +162,17 @@ export async function POST(request: Request) {
       !Array.isArray(parsed.opportunities_for_systemA) ||
       !Array.isArray(parsed.opportunities_for_systemB)
     ) {
-      return NextResponse.json(
-        { error: "model_failure" },
-        { status: 502 },
-      );
+      return apiError(502, "generation_failed", "Invalid response structure");
     }
 
-    return NextResponse.json(parsed);
+    ctx.logInfo("Systems compared successfully", { systemA, systemB });
+    return apiSuccess(parsed);
   } catch (error) {
-    logger.error(error, "Compare systems error");
-    return NextResponse.json(
-      { error: "model_failure" },
-      { status: 500 },
-    );
+    if (error instanceof Response) {
+      return error;
+    }
+    ctx.logError(error, "Compare systems error", { systemA, systemB });
+    return apiError(500, "generation_failed", "An unexpected error occurred");
   }
 }
 

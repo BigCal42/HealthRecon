@@ -1,8 +1,16 @@
-import { NextResponse } from "next/server";
-
+import { apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
+import { config } from "@/lib/config";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
+import type { NextResponse } from "next/server";
+
+// Use Node.js runtime for Supabase integration
+export const runtime = "nodejs";
 
 export async function GET(): Promise<NextResponse> {
+  const ctx = createRequestContext("/api/health");
+  ctx.logInfo("Health check request received");
+
   const supabase = createServerSupabaseClient();
 
   const { error: systemsError } = await supabase
@@ -12,10 +20,10 @@ export async function GET(): Promise<NextResponse> {
 
   const supabaseOk = !systemsError;
 
-  const openaiConfigured = !!process.env.OPENAI_API_KEY;
-  const firecrawlConfigured = !!process.env.FIRECRAWL_API_KEY;
+  const openaiConfigured = !!config.openai.apiKey;
+  const firecrawlConfigured = !!config.FIRECRAWL_API_KEY;
 
-  return NextResponse.json({
+  return apiSuccess({
     ok: supabaseOk && openaiConfigured && firecrawlConfigured,
     supabase: supabaseOk ? "ok" : "error",
     openaiConfigured,

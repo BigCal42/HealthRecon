@@ -1,11 +1,16 @@
-import { NextResponse } from "next/server";
+import { z } from "zod";
 
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
+import { parseJsonBody } from "@/lib/api/validate";
 import { BILH_SLUG } from "@/config/constants";
 import { getDailyInputs } from "@/lib/getDailyInputs";
-import { logger } from "@/lib/logger";
 import { createResponse, extractTextFromResponse } from "@/lib/openaiClient";
-import { rateLimit } from "@/lib/rateLimit";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
+
+// Use Node.js runtime for OpenAI and Supabase integrations
+export const runtime = "nodejs";
 
 type DailyBriefingPayload = {
   bullets: string[];
@@ -13,29 +18,37 @@ type DailyBriefingPayload = {
 };
 
 export async function POST(request: Request) {
+  const ctx = createRequestContext("/api/daily-briefing");
+  ctx.logInfo("Daily briefing generation request received");
+
   const ip = request.headers.get("x-forwarded-for") ?? "unknown";
-  const ok = rateLimit({
-    key: `post:${ip}:${request.url}`,
+  const rateLimitResult = await checkRateLimit({
+    key: `daily-briefing:${ip}`,
     limit: 5,
     windowMs: 60_000,
   });
 
-  if (!ok) {
-    logger.warn("Rate limit exceeded", { ip, url: request.url });
-    return new Response("Too Many Requests", { status: 429 });
+  if (!rateLimitResult.allowed) {
+    ctx.logError(new Error("Rate limit exceeded"), "Rate limit exceeded", { ip, resetAt: rateLimitResult.resetAt });
+    return apiError(429, "rate_limited", "Rate limit exceeded.");
   }
-  const supabase = createServerSupabaseClient();
-
-  let slug = BILH_SLUG;
 
   try {
-    const body = await request.json();
-    if (body && typeof body === "object" && typeof body.slug === "string") {
-      slug = body.slug;
+    const supabase = createServerSupabaseClient();
+
+    const postSchema = z.object({
+      slug: z.string().min(1).max(100).optional(),
+    });
+
+    let slug = BILH_SLUG;
+    try {
+      const body = await parseJsonBody(request, postSchema);
+      if (body.slug) {
+        slug = body.slug;
+      }
+    } catch {
+      // If validation fails, use default slug
     }
-  } catch {
-    // Ignore invalid / missing JSON bodies, default slug applies.
-  }
 
   const { data: system, error: systemError } = await supabase
     .from("systems")
@@ -44,10 +57,7 @@ export async function POST(request: Request) {
     .maybeSingle<{ id: string; slug: string; name: string }>();
 
   if (systemError || !system) {
-    return NextResponse.json(
-      { error: "system_not_found" },
-      { status: 404 },
-    );
+    return apiError(404, "system_not_found", "System not found");
   }
 
   const { signals, documents } = await getDailyInputs(supabase, system.id);
@@ -60,9 +70,10 @@ export async function POST(request: Request) {
         status: "no_recent_activity",
       });
     } catch (logError) {
-      logger.error(logError, "Failed to log daily briefing run");
+      ctx.logError(logError, "Failed to log daily briefing run", { systemId: system.id });
     }
-    return NextResponse.json({ created: false, reason: "no_recent_activity" });
+    ctx.logInfo("Daily briefing skipped - no recent activity", { systemId: system.id });
+    return apiSuccess({ created: false, reason: "no_recent_activity" });
   }
 
   const signalLines = signals.map(
@@ -101,12 +112,10 @@ export async function POST(request: Request) {
         error_message: "model_response_missing",
       });
     } catch (logError) {
-      logger.error(logError, "Failed to log daily briefing run");
+      ctx.logError(logError, "Failed to log daily briefing run", { systemId: system.id });
     }
-    return NextResponse.json(
-      { error: "model_response_missing" },
-      { status: 502 },
-    );
+    ctx.logError(new Error("Model response missing"), "Model response missing", { systemId: system.id });
+    return apiError(502, "generation_failed", "Model response missing");
   }
 
   let parsed: DailyBriefingPayload;
@@ -114,7 +123,7 @@ export async function POST(request: Request) {
   try {
     parsed = JSON.parse(rawOutput) as DailyBriefingPayload;
   } catch (error) {
-    logger.error(error, "Failed to parse model output", rawOutput);
+    ctx.logError(error, "Failed to parse model output", { rawOutput, systemId: system.id });
     // Log error
     try {
       await supabase.from("daily_briefing_runs").insert({
@@ -123,12 +132,9 @@ export async function POST(request: Request) {
         error_message: `model_response_invalid: ${String(error)}`,
       });
     } catch (logError) {
-      logger.error(logError, "Failed to log daily briefing run");
+      ctx.logError(logError, "Failed to log daily briefing run", { systemId: system.id });
     }
-    return NextResponse.json(
-      { error: "model_response_invalid" },
-      { status: 502 },
-    );
+    return apiError(502, "generation_failed", "Model response invalid");
   }
 
   if (!Array.isArray(parsed.bullets) || typeof parsed.narrative !== "string") {
@@ -140,12 +146,10 @@ export async function POST(request: Request) {
         error_message: "model_response_unexpected",
       });
     } catch (logError) {
-      logger.error(logError, "Failed to log daily briefing run");
+      ctx.logError(logError, "Failed to log daily briefing run", { systemId: system.id });
     }
-    return NextResponse.json(
-      { error: "model_response_unexpected" },
-      { status: 502 },
-    );
+    ctx.logError(new Error("Invalid response structure"), "Invalid response structure", { systemId: system.id });
+    return apiError(502, "generation_failed", "Model response unexpected structure");
   }
 
   const { data: inserted, error: insertError } = await supabase
@@ -158,7 +162,7 @@ export async function POST(request: Request) {
     .maybeSingle<{ id: string }>();
 
   if (insertError || !inserted) {
-    logger.error(insertError, "Failed to store daily briefing");
+    ctx.logError(insertError, "Failed to store daily briefing", { systemId: system.id });
     // Log error
     try {
       await supabase.from("daily_briefing_runs").insert({
@@ -167,9 +171,9 @@ export async function POST(request: Request) {
         error_message: `storage_failed: ${String(insertError)}`,
       });
     } catch (logError) {
-      logger.error(logError, "Failed to log daily briefing run");
+      ctx.logError(logError, "Failed to log daily briefing run", { systemId: system.id });
     }
-    return NextResponse.json({ error: "storage_failed" }, { status: 500 });
+    return apiError(500, "storage_failed", "Failed to store daily briefing");
   }
 
   // Log success
@@ -180,12 +184,20 @@ export async function POST(request: Request) {
       briefing_id: inserted.id,
     });
   } catch (logError) {
-    logger.error(logError, "Failed to log daily briefing run");
+    ctx.logError(logError, "Failed to log daily briefing run", { systemId: system.id });
   }
 
-  return NextResponse.json({
+  ctx.logInfo("Daily briefing generated successfully", { systemId: system.id, briefingId: inserted.id });
+  return apiSuccess({
     created: true,
     briefingId: inserted.id,
   });
+  } catch (error) {
+    if (error instanceof Response) {
+      return error;
+    }
+    ctx.logError(error, "Daily briefing generation error");
+    return apiError(500, "generation_failed", "An unexpected error occurred");
+  }
 }
 

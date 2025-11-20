@@ -1,19 +1,23 @@
-import { NextResponse } from "next/server";
+import { z } from "zod";
 
-import { logger } from "@/lib/logger";
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
+import { validateQuery } from "@/lib/api/validate";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
-export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const slug = searchParams.get("slug");
+// Use Node.js runtime for Supabase integration
+export const runtime = "nodejs";
 
-    if (!slug) {
-      return NextResponse.json(
-        { error: "slug query parameter is required" },
-        { status: 400 },
-      );
-    }
+export async function GET(request: Request) {
+  const ctx = createRequestContext("/api/admin/system-seeds");
+  ctx.logInfo("Admin system seeds fetch request received");
+
+  try {
+    const getSchema = z.object({
+      slug: z.string().min(1).max(100),
+    });
+
+    const { slug } = validateQuery(request.url, getSchema);
 
     const supabase = createServerSupabaseClient();
 
@@ -24,10 +28,7 @@ export async function GET(request: Request) {
       .maybeSingle<{ id: string }>();
 
     if (systemError || !system) {
-      return NextResponse.json(
-        { error: "system_not_found" },
-        { status: 404 },
-      );
+      return apiError(404, "system_not_found", "System not found");
     }
 
     const { data: seeds, error: seedsError } = await supabase
@@ -37,37 +38,35 @@ export async function GET(request: Request) {
       .order("created_at", { ascending: false });
 
     if (seedsError) {
-      logger.error(seedsError, "Failed to fetch seeds");
-      return NextResponse.json(
-        { error: "fetch_failed" },
-        { status: 500 },
-      );
+      ctx.logError(seedsError, "Failed to fetch seeds", { slug, systemId: system.id });
+      return apiError(500, "fetch_failed", "Failed to fetch seeds");
     }
 
-    return NextResponse.json({ seeds: seeds ?? [] });
+    ctx.logInfo("System seeds fetched successfully", { slug, count: seeds?.length ?? 0 });
+    return apiSuccess({ seeds: seeds ?? [] });
   } catch (error) {
-    logger.error(error, "System seeds API error");
-    return NextResponse.json(
-      { error: "unexpected_error" },
-      { status: 500 },
-    );
+    if (error instanceof Response) {
+      return error;
+    }
+    ctx.logError(error, "System seeds API error");
+    return apiError(500, "unexpected_error", "An unexpected error occurred");
   }
 }
 
-export async function POST(request: Request) {
-  try {
-    const body = (await request.json()) as {
-      slug: string;
-      url: string;
-      active?: boolean;
-    };
+import { parseJsonBody } from "@/lib/api/validate";
 
-    if (!body.slug || !body.url) {
-      return NextResponse.json(
-        { ok: false, error: "slug and url are required" },
-        { status: 400 },
-      );
-    }
+export async function POST(request: Request) {
+  const ctx = createRequestContext("/api/admin/system-seeds");
+  ctx.logInfo("Admin system seed creation request received");
+
+  try {
+    const postSchema = z.object({
+      slug: z.string().min(1).max(100),
+      url: z.string().url().max(2000),
+      active: z.boolean().optional(),
+    });
+
+    const body = await parseJsonBody(request, postSchema);
 
     const supabase = createServerSupabaseClient();
 
@@ -78,10 +77,7 @@ export async function POST(request: Request) {
       .maybeSingle<{ id: string }>();
 
     if (systemError || !system) {
-      return NextResponse.json(
-        { ok: false, error: "system_not_found" },
-        { status: 404 },
-      );
+      return apiError(404, "system_not_found", "System not found");
     }
 
     const { error: insertError } = await supabase.from("system_seeds").insert({
@@ -91,20 +87,18 @@ export async function POST(request: Request) {
     });
 
     if (insertError) {
-      logger.error(insertError, "Failed to insert seed");
-      return NextResponse.json(
-        { ok: false, error: "insert_failed" },
-        { status: 500 },
-      );
+      ctx.logError(insertError, "Failed to insert seed", { slug: body.slug, systemId: system.id, url: body.url });
+      return apiError(500, "insert_failed", "Failed to insert seed");
     }
 
-    return NextResponse.json({ ok: true });
+    ctx.logInfo("System seed created successfully", { slug: body.slug, systemId: system.id });
+    return apiSuccess({});
   } catch (error) {
-    logger.error(error, "System seeds API error");
-    return NextResponse.json(
-      { ok: false, error: "unexpected_error" },
-      { status: 500 },
-    );
+    if (error instanceof Response) {
+      return error;
+    }
+    ctx.logError(error, "System seeds API error");
+    return apiError(500, "unexpected_error", "An unexpected error occurred");
   }
 }
 

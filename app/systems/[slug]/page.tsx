@@ -12,12 +12,12 @@ import { SystemOpportunitySuggestions } from "@/components/SystemOpportunitySugg
 import { SystemOutboundComposer } from "@/components/SystemOutboundComposer";
 import { SystemOutboundPrep } from "@/components/SystemOutboundPrep";
 import { SystemProfile } from "@/components/SystemProfile";
-import { SystemAccountPlan } from "@/components/SystemAccountPlan";
 import { SystemContacts } from "@/components/SystemContacts";
 import { SystemTimeline } from "@/components/SystemTimeline";
 import { SystemSignalActions } from "@/components/SystemSignalActions";
 import { SystemNarrative } from "@/components/SystemNarrative";
 import { getSingleSystemHealthScore } from "@/lib/getSingleSystemHealthScore";
+import { PageShell } from "@/components/layout/PageShell";
 
 type SystemRow = {
   id: string;
@@ -116,17 +116,17 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
 
   if (error || !system) {
     return (
-      <div style={{ padding: "2rem" }}>
+      <PageShell>
         <h1>System not found</h1>
         <p>
           {error
             ? "Unable to load system data."
             : `The system "${slug}" does not exist.`}
         </p>
-        <p style={{ color: "#666" }}>
+        <p className="text-muted-foreground">
           Currently only the {BILH_SLUG.toUpperCase()} system is seeded.
         </p>
-      </div>
+      </PageShell>
     );
   }
 
@@ -241,359 +241,480 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
     : null;
 
   return (
-    <div style={{ padding: "2rem" }}>
+    <PageShell>
       <h1>{UICopy.systemSections.overview} – {system.name}</h1>
       {system.website && (
-        <p>
-          <a href={system.website} target="_blank" rel="noopener noreferrer">
+        <p className="mt-2">
+          <a
+            href={system.website}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
             {system.website}
           </a>
         </p>
       )}
-      <nav>
-        <ul style={{ listStyle: "none", padding: 0, display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+      <nav className="mt-6 mb-8">
+        <ul className="flex flex-wrap gap-4 list-none p-0">
           <li>
-            <Link href={`/systems/${system.slug}/timeline`}>{UICopy.systemSections.timeline}</Link>
+            <Link
+              href={`/systems/${system.slug}/timeline`}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {UICopy.systemSections.timeline}
+            </Link>
           </li>
           <li>
-            <Link href={`/systems/${system.slug}/deals`}>{UICopy.systemSections.deals}</Link>
+            <Link
+              href={`/systems/${system.slug}/deals`}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {UICopy.systemSections.deals}
+            </Link>
           </li>
           <li>
-            <Link href={`/systems/${system.slug}/insights`}>{UICopy.systemSections.insights}</Link>
+            <Link
+              href={`/systems/${system.slug}/insights`}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {UICopy.systemSections.insights}
+            </Link>
           </li>
           <li>
-            <Link href={`/systems/${system.slug}/outbound-playbook`}>Outbound Playbook</Link>
+            <Link
+              href={`/systems/${system.slug}/outbound-playbook`}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Outbound Playbook
+            </Link>
           </li>
           <li>
-            <Link href={`/systems/${system.slug}/strategy`}>Strategy Briefing</Link>
+            <Link
+              href={`/systems/${system.slug}/strategy`}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Strategy Briefing
+            </Link>
           </li>
           <li>
-            <Link href={`/systems/${system.slug}/meeting-prep`}>Meeting Prep</Link>
+            <Link
+              href={`/systems/${system.slug}/meeting-prep`}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Meeting Prep
+            </Link>
           </li>
           <li>
-            <Link href={`/systems/${system.slug}/chat`}>Chat</Link>
+            <Link
+              href={`/systems/${system.slug}/account-plan`}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Account Plan
+            </Link>
           </li>
           <li>
-            <Link href={`/systems/${system.slug}/ingestion`}>Ingestion</Link>
+            <Link
+              href={`/systems/${system.slug}/opportunities`}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Opportunities
+            </Link>
           </li>
           <li>
-            <Link href={`/demo?slug=${system.slug}`}>{UICopy.nav.heroDemo}</Link>
+            <Link
+              href={`/systems/${system.slug}/chat`}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Chat
+            </Link>
+          </li>
+          <li>
+            <Link
+              href={`/systems/${system.slug}/ingestion`}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Ingestion
+            </Link>
+          </li>
+          <li>
+            <Link
+              href={`/demo?slug=${system.slug}`}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {UICopy.nav.heroDemo}
+            </Link>
           </li>
         </ul>
       </nav>
 
-      <section style={{ marginTop: "2rem" }}>
-        <h2>System Health</h2>
-        {health ? (
-          <div>
-            <p>
-              <strong>Band:</strong> {health.band} |{" "}
-              <strong>Score:</strong> {health.overallScore}
-            </p>
-            <p>Components:</p>
-            <ul>
-              <li>Engagement: {health.components.engagementScore}</li>
-              <li>Opportunities: {health.components.opportunityScore}</li>
-              <li>Signals: {health.components.signalScore}</li>
-              <li>Risk: {health.components.riskScore}</li>
-            </ul>
-            {health.reasons.length > 0 && (
-              <>
-                <p>Why:</p>
-                <ul>
-                  {health.reasons.map((r, i) => (
-                    <li key={i}>{r}</li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </div>
-        ) : (
-          <p>No health score available.</p>
-        )}
-      </section>
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2>System Overview</h2>
-        <ul>
-          <li>Total documents: {documentCount}</li>
-          <li>Total entities: {entityCount}</li>
-          <li>Total signals: {signalCount}</li>
-          <li>Last document: {lastDocumentAt ?? "N/A"}</li>
-          <li>Last signal: {lastSignalAt ?? "N/A"}</li>
-          <li>Last briefing: {lastBriefingAt ?? "N/A"}</li>
-        </ul>
-      </section>
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2>System Profile</h2>
-        <SystemProfile slug={system.slug} />
-      </section>
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2>Account Plan</h2>
-        <SystemAccountPlan slug={system.slug} />
-      </section>
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2>Living System Narrative</h2>
-        <SystemNarrative slug={system.slug} />
-      </section>
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2>Key Contacts & Buying Committee</h2>
-        <SystemContacts slug={system.slug} />
-      </section>
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2>Outbound Prep & Playbook</h2>
-        <SystemOutboundPrep slug={system.slug} />
-      </section>
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2>Outbound Draft Composer</h2>
-        <SystemOutboundComposer slug={system.slug} />
-      </section>
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2>News</h2>
-        {news.length === 0 ? (
-          <p>No news yet.</p>
-        ) : (
-          <ul>
-            {news.map((n) => (
-              <li key={n.id}>
-                <a href={n.source_url} target="_blank" rel="noopener noreferrer">
-                  {n.title ?? "Untitled"}
-                </a>{" "}
-                – {n.crawled_at ? new Date(n.crawled_at).toLocaleString() : "Unknown"}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <SystemActions slug={system.slug} />
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2>Suggested Opportunities</h2>
-        <SystemOpportunitySuggestions slug={system.slug} />
-      </section>
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2>Opportunities</h2>
-        <SystemOpportunities slug={system.slug} />
-      </section>
-
-      <SystemTimeline systemSlug={system.slug} />
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2>Interaction Log</h2>
-        <SystemInteractions slug={system.slug} />
-      </section>
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2>Run History</h2>
-        <h3>Pipeline Runs</h3>
-        {pipelineRuns && pipelineRuns.length > 0 ? (
-          <ul>
-            {pipelineRuns.map((run) => (
-              <li key={run.id}>
-                [{run.created_at ? new Date(run.created_at).toLocaleString() : "Unknown"}] {run.status} – ingest: {run.ingest_created}, process: {run.process_processed}
-                {run.error_message ? <> – Error: {run.error_message}</> : null}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>No pipeline runs yet.</p>
-        )}
-        <h3>Daily Briefing Runs</h3>
-        {briefingRuns && briefingRuns.length > 0 ? (
-          <ul>
-            {briefingRuns.map((run) => (
-              <li key={run.id}>
-                [{run.created_at ? new Date(run.created_at).toLocaleString() : "Unknown"}] {run.status}
-                {run.error_message ? <> – Error: {run.error_message}</> : null}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>No daily briefing runs yet.</p>
-        )}
-      </section>
-
-      {briefingBullets && briefingNarrative && (
-        <section style={{ marginTop: "2rem" }}>
-          <h2>Daily Briefing</h2>
-          <ul>
-            {briefingBullets.map((bullet, index) => (
-              <li key={`${index}-${bullet}`}>{bullet}</li>
-            ))}
-          </ul>
-          <p>{briefingNarrative}</p>
-          <hr />
-        </section>
-      )}
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2>{UICopy.systemSections.signals}</h2>
-        {signals.length === 0 ? (
-          <p>No signals yet</p>
-        ) : (
-          <>
-            <ul>
-              {signals.map((signal) => {
-                const documentRelation = Array.isArray(signal.documents)
-                  ? signal.documents[0]
-                  : signal.documents;
-                const documentUrl = documentRelation?.source_url ?? null;
-
-                return (
-                  <li key={signal.id} style={{ marginBottom: "1rem" }}>
-                    <p>Severity: {signal.severity ?? "Unknown"}</p>
-                    <p>Category: {signal.category ?? "Unknown"}</p>
-                    <p>{signal.summary ?? "No summary provided."}</p>
-                    <p>Created: {signal.created_at ?? "Unknown"}</p>
-                    {documentUrl ? (
-                      <p>
-                        <a href={documentUrl} target="_blank" rel="noopener noreferrer">
-                          Source document
-                        </a>
-                      </p>
-                    ) : (
-                      <p>No source document available.</p>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-            {(() => {
-              const signalsTotalPages = Math.max(1, Math.ceil((signalsTotal ?? 0) / pageSize));
-              return (
-                <div style={{ marginTop: "1rem" }}>
-                  <p>
-                    Page {sigPage} of {signalsTotalPages}
-                  </p>
-                  <div>
-                    {sigPage > 1 && (
-                      <a href={`?signals_page=${sigPage - 1}&documents_page=${docPage}`}>
-                        Previous
-                      </a>
-                    )}
-                    {sigPage < signalsTotalPages && (
-                      <>
-                        {" "}
-                        <a href={`?signals_page=${sigPage + 1}&documents_page=${docPage}`}>
-                          Next
-                        </a>
-                      </>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
-          </>
-        )}
-      </section>
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2>Signal-Based Actions</h2>
-        <SystemSignalActions slug={system.slug} signals={signals} />
-      </section>
-
-      <section style={{ marginTop: "2rem" }}>
-        <h2>Entities</h2>
-        {!hasEntities ? (
-          <p>No entities yet</p>
-        ) : (
-          ENTITY_SECTIONS.map((section) => {
-            const sectionEntities = groupedEntities[section.key] ?? [];
-
-            return (
-              <div key={section.key} style={{ marginBottom: "1rem" }}>
-                <h3>{section.heading}</h3>
-                {sectionEntities.length === 0 ? (
-                  <p>No {section.heading.toLowerCase()} found.</p>
-                ) : (
-                  <ul>
-                    {sectionEntities.map((entity) => (
-                      <li key={entity.id}>
-                        <span>{entity.name}</span>
-                        {entity.role ? <span> — {entity.role}</span> : null}
-                      </li>
+      <div className="grid gap-8">
+        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+          <h2 className="mb-4">System Health</h2>
+          {health ? (
+            <div>
+              <p className="mb-2">
+                <strong>Band:</strong> {health.band} |{" "}
+                <strong>Score:</strong> {health.overallScore}
+              </p>
+              <p className="mb-2">Components:</p>
+              <ul className="list-disc list-inside mb-4">
+                <li>Engagement: {health.components.engagementScore}</li>
+                <li>Opportunities: {health.components.opportunityScore}</li>
+                <li>Signals: {health.components.signalScore}</li>
+                <li>Risk: {health.components.riskScore}</li>
+              </ul>
+              {health.reasons.length > 0 && (
+                <>
+                  <p className="mb-2">Why:</p>
+                  <ul className="list-disc list-inside">
+                    {health.reasons.map((r, i) => (
+                      <li key={i}>{r}</li>
                     ))}
                   </ul>
-                )}
-              </div>
-            );
-          })
-        )}
-      </section>
+                </>
+              )}
+            </div>
+          ) : (
+            <p className="text-muted-foreground">No health score available.</p>
+          )}
+        </section>
 
-      <section style={{ marginTop: "2rem" }}>
-        <h2>{UICopy.systemSections.documents}</h2>
-        {documents.length === 0 ? (
-          <p>No documents yet</p>
-        ) : (
-          <>
-            <ul>
-              {documents.map((document) => (
-                <li key={document.id} style={{ marginBottom: "1rem" }}>
-                  <p>{document.title ?? "Untitled"}</p>
-                  <p>
-                    <a href={document.source_url} target="_blank" rel="noopener noreferrer">
-                      {document.source_url}
-                    </a>
-                  </p>
-                  <p>Crawled: {document.crawled_at ?? "Unknown"}</p>
+        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+          <h2 className="mb-4">System Overview</h2>
+          <ul className="space-y-1">
+            <li>Total documents: {documentCount}</li>
+            <li>Total entities: {entityCount}</li>
+            <li>Total signals: {signalCount}</li>
+            <li>Last document: {lastDocumentAt ?? "N/A"}</li>
+            <li>Last signal: {lastSignalAt ?? "N/A"}</li>
+            <li>Last briefing: {lastBriefingAt ?? "N/A"}</li>
+          </ul>
+        </section>
+
+        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+          <h2 className="mb-4">System Profile</h2>
+          <SystemProfile slug={system.slug} systemId={system.id} />
+        </section>
+
+        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+          <h2 className="mb-4">Account Plan</h2>
+          <p>
+            <Link
+              href={`/systems/${system.slug}/account-plan`}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Open Account Plan workspace
+            </Link>
+          </p>
+        </section>
+
+        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+          <h2 className="mb-4">Living System Narrative</h2>
+          <SystemNarrative slug={system.slug} />
+        </section>
+
+        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+          <h2 className="mb-4">Key Contacts & Buying Committee</h2>
+          <SystemContacts slug={system.slug} />
+        </section>
+
+        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+          <h2 className="mb-4">Outbound Prep & Playbook</h2>
+          <SystemOutboundPrep slug={system.slug} />
+        </section>
+
+        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+          <h2 className="mb-4">Outbound Draft Composer</h2>
+          <SystemOutboundComposer slug={system.slug} />
+        </section>
+
+        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+          <h2 className="mb-4">News</h2>
+          {news.length === 0 ? (
+            <p className="text-muted-foreground">No news yet.</p>
+          ) : (
+            <ul className="space-y-2">
+              {news.map((n) => (
+                <li key={n.id} className="hover:bg-muted/50 transition-colors rounded-lg p-2 -mx-2">
+                  <a
+                    href={n.source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-foreground transition-colors"
+                  >
+                    {n.title ?? "Untitled"}
+                  </a>{" "}
+                  <span className="text-muted-foreground">
+                    – {n.crawled_at ? new Date(n.crawled_at).toLocaleString() : "Unknown"}
+                  </span>
                 </li>
               ))}
             </ul>
-            {(() => {
-              const documentsTotalPages = Math.max(1, Math.ceil((documentsTotal ?? 0) / pageSize));
-              return (
-                <div style={{ marginTop: "1rem" }}>
-                  <p>
-                    Page {docPage} of {documentsTotalPages}
-                  </p>
-                  <div>
-                    {docPage > 1 && (
-                      <a href={`?documents_page=${docPage - 1}&signals_page=${sigPage}`}>
-                        Previous
-                      </a>
-                    )}
-                    {docPage < documentsTotalPages && (
-                      <>
-                        {" "}
-                        <a href={`?documents_page=${docPage + 1}&signals_page=${sigPage}`}>
+          )}
+        </section>
+
+        <SystemActions slug={system.slug} />
+
+        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+          <h2 className="mb-4">Suggested Opportunities</h2>
+          <SystemOpportunitySuggestions slug={system.slug} />
+        </section>
+
+        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+          <h2 className="mb-4">Opportunities</h2>
+          <SystemOpportunities slug={system.slug} />
+        </section>
+
+        <SystemTimeline systemSlug={system.slug} />
+
+        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+          <h2 className="mb-4">Interaction Log</h2>
+          <SystemInteractions slug={system.slug} />
+        </section>
+
+        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+          <h2 className="mb-4">Run History</h2>
+          <h3 className="mb-3">Pipeline Runs</h3>
+          {pipelineRuns && pipelineRuns.length > 0 ? (
+            <ul className="space-y-2 mb-6">
+              {pipelineRuns.map((run) => (
+                <li key={run.id} className="text-sm">
+                  <span className="text-muted-foreground">
+                    [{run.created_at ? new Date(run.created_at).toLocaleString() : "Unknown"}]
+                  </span>{" "}
+                  {run.status} – ingest: {run.ingest_created}, process: {run.process_processed}
+                  {run.error_message && (
+                    <span className="text-muted-foreground"> – Error: {run.error_message}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-muted-foreground mb-6">No pipeline runs yet.</p>
+          )}
+          <h3 className="mb-3">Daily Briefing Runs</h3>
+          {briefingRuns && briefingRuns.length > 0 ? (
+            <ul className="space-y-2">
+              {briefingRuns.map((run) => (
+                <li key={run.id} className="text-sm">
+                  <span className="text-muted-foreground">
+                    [{run.created_at ? new Date(run.created_at).toLocaleString() : "Unknown"}]
+                  </span>{" "}
+                  {run.status}
+                  {run.error_message && (
+                    <span className="text-muted-foreground"> – Error: {run.error_message}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-muted-foreground">No daily briefing runs yet.</p>
+          )}
+        </section>
+
+        {briefingBullets && briefingNarrative && (
+          <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+            <h2 className="mb-4">Daily Briefing</h2>
+            <ul className="space-y-2 mb-4">
+              {briefingBullets.map((bullet, index) => (
+                <li key={`${index}-${bullet}`}>{bullet}</li>
+              ))}
+            </ul>
+            <p className="text-muted-foreground leading-relaxed">{briefingNarrative}</p>
+          </section>
+        )}
+
+        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+          <h2 className="mb-4">{UICopy.systemSections.signals}</h2>
+          {signals.length === 0 ? (
+            <p className="text-muted-foreground">No signals yet</p>
+          ) : (
+            <>
+              <ul className="space-y-4">
+                {signals.map((signal) => {
+                  const documentRelation = Array.isArray(signal.documents)
+                    ? signal.documents[0]
+                    : signal.documents;
+                  const documentUrl = documentRelation?.source_url ?? null;
+
+                  return (
+                    <li key={signal.id} className="border-b border-border/20 pb-4 last:border-0">
+                      <p className="mb-1">
+                        <strong>Severity:</strong> {signal.severity ?? "Unknown"}
+                      </p>
+                      <p className="mb-1">
+                        <strong>Category:</strong> {signal.category ?? "Unknown"}
+                      </p>
+                      <p className="mb-2">{signal.summary ?? "No summary provided."}</p>
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Created: {signal.created_at ?? "Unknown"}
+                      </p>
+                      {documentUrl ? (
+                        <p>
+                          <a
+                            href={documentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-muted-foreground hover:text-foreground transition-colors text-sm"
+                          >
+                            Source document
+                          </a>
+                        </p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">No source document available.</p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+              {(() => {
+                const signalsTotalPages = Math.max(1, Math.ceil((signalsTotal ?? 0) / pageSize));
+                return (
+                  <div className="mt-6 flex items-center gap-4">
+                    <p className="text-sm text-muted-foreground">
+                      Page {sigPage} of {signalsTotalPages}
+                    </p>
+                    <div className="flex gap-2">
+                      {sigPage > 1 && (
+                        <Link
+                          href={`?signals_page=${sigPage - 1}&documents_page=${docPage}`}
+                          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          Previous
+                        </Link>
+                      )}
+                      {sigPage < signalsTotalPages && (
+                        <Link
+                          href={`?signals_page=${sigPage + 1}&documents_page=${docPage}`}
+                          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                        >
                           Next
-                        </a>
-                      </>
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </section>
+
+        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+          <h2 className="mb-4">Signal-Based Actions</h2>
+          <SystemSignalActions slug={system.slug} signals={signals} />
+        </section>
+
+        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+          <h2 className="mb-4">Entities</h2>
+          {!hasEntities ? (
+            <p className="text-muted-foreground">No entities yet</p>
+          ) : (
+            <div className="space-y-6">
+              {ENTITY_SECTIONS.map((section) => {
+                const sectionEntities = groupedEntities[section.key] ?? [];
+
+                return (
+                  <div key={section.key}>
+                    <h3 className="mb-2">{section.heading}</h3>
+                    {sectionEntities.length === 0 ? (
+                      <p className="text-muted-foreground">No {section.heading.toLowerCase()} found.</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {sectionEntities.map((entity) => (
+                          <li key={entity.id}>
+                            <span>{entity.name}</span>
+                            {entity.role && (
+                              <span className="text-muted-foreground"> — {entity.role}</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
                     )}
                   </div>
-                </div>
-              );
-            })()}
-          </>
-        )}
-      </section>
+                );
+              })}
+            </div>
+          )}
+        </section>
 
-      <section style={{ marginTop: "2rem" }}>
-        <h2>Recent Feedback</h2>
-        {feedback && feedback.length > 0 ? (
-          <ul>
-            {feedback.map((f) => (
-              <li key={f.id}>
-                [{f.created_at ? new Date(f.created_at).toLocaleString() : "Unknown"}] {f.kind} – {f.sentiment}
-                {f.comment ? <> – {f.comment}</> : null}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>No feedback yet.</p>
-        )}
-      </section>
-    </div>
+        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+          <h2 className="mb-4">{UICopy.systemSections.documents}</h2>
+          {documents.length === 0 ? (
+            <p className="text-muted-foreground">No documents yet</p>
+          ) : (
+            <>
+              <ul className="space-y-4">
+                {documents.map((document) => (
+                  <li key={document.id} className="border-b border-border/20 pb-4 last:border-0">
+                    <p className="mb-2">{document.title ?? "Untitled"}</p>
+                    <p className="mb-2">
+                      <a
+                        href={document.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-muted-foreground hover:text-foreground transition-colors text-sm break-all"
+                      >
+                        {document.source_url}
+                      </a>
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Crawled: {document.crawled_at ?? "Unknown"}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+              {(() => {
+                const documentsTotalPages = Math.max(1, Math.ceil((documentsTotal ?? 0) / pageSize));
+                return (
+                  <div className="mt-6 flex items-center gap-4">
+                    <p className="text-sm text-muted-foreground">
+                      Page {docPage} of {documentsTotalPages}
+                    </p>
+                    <div className="flex gap-2">
+                      {docPage > 1 && (
+                        <Link
+                          href={`?documents_page=${docPage - 1}&signals_page=${sigPage}`}
+                          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          Previous
+                        </Link>
+                      )}
+                      {docPage < documentsTotalPages && (
+                        <Link
+                          href={`?documents_page=${docPage + 1}&signals_page=${sigPage}`}
+                          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          Next
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </section>
+
+        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
+          <h2 className="mb-4">Recent Feedback</h2>
+          {feedback && feedback.length > 0 ? (
+            <ul className="space-y-2">
+              {feedback.map((f) => (
+                <li key={f.id} className="text-sm">
+                  <span className="text-muted-foreground">
+                    [{f.created_at ? new Date(f.created_at).toLocaleString() : "Unknown"}]
+                  </span>{" "}
+                  {f.kind} – {f.sentiment}
+                  {f.comment && <span className="text-muted-foreground"> – {f.comment}</span>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-muted-foreground">No feedback yet.</p>
+          )}
+        </section>
+      </div>
+    </PageShell>
   );
 }
-

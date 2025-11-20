@@ -2,31 +2,35 @@ import { createServerSupabaseClient } from "@/lib/supabaseClient";
 import { getSystemTimeline } from "@/lib/getSystemTimeline";
 
 interface SystemTimelineProps {
-  systemId: string;
+  systemSlug: string;
 }
 
-export async function SystemTimeline({ systemId }: SystemTimelineProps) {
+export async function SystemTimeline({ systemSlug }: SystemTimelineProps) {
   const supabase = createServerSupabaseClient();
-  const events = await getSystemTimeline(supabase, systemId);
+  const timeline = await getSystemTimeline(supabase, systemSlug, {
+    daysBack: 30,
+    limit: 50,
+  });
+
+  if (!timeline || timeline.items.length === 0) {
+    return null;
+  }
 
   return (
     <section style={{ marginTop: "2rem" }}>
-      <h2>Timeline</h2>
-      {events.length === 0 ? (
-        <p>No activity yet.</p>
-      ) : (
-        <ul>
-          {events.map((e, i) => (
-            <li key={i}>
-              <p>
-                <strong>{e.type}</strong> — {e.title}
-              </p>
-              {e.description && <p>{e.description}</p>}
-              <p>{e.timestamp}</p>
-            </li>
-          ))}
-        </ul>
-      )}
+      <h2>Recent Timeline</h2>
+      <ul>
+        {timeline.items.map((item) => (
+          <li key={`${item.type}-${item.id}-${item.occurredAt}`}>
+            <p>
+              <strong>[{item.type}]</strong> {item.occurredAt} – {item.title}
+            </p>
+          </li>
+        ))}
+      </ul>
+      <p>
+        <a href={`/systems/${timeline.slug}/timeline`}>View full timeline</a>
+      </p>
     </section>
   );
 }

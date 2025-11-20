@@ -1,23 +1,35 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-function getSupabaseConfig() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error("Missing Supabase environment variables");
-  }
-
-  return { supabaseUrl, supabaseAnonKey };
-}
+import { config } from "./config";
+import type { Database } from "./supabase.types";
 
 export function createBrowserSupabaseClient() {
-  const { supabaseUrl, supabaseAnonKey } = getSupabaseConfig();
-  return createClient(supabaseUrl, supabaseAnonKey);
+  return createClient<Database>(config.NEXT_PUBLIC_SUPABASE_URL, config.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 }
 
+let serverSupabaseClient: SupabaseClient<Database> | null = null;
+
 export function createServerSupabaseClient() {
-  const { supabaseUrl, supabaseAnonKey } = getSupabaseConfig();
-  return createClient(supabaseUrl, supabaseAnonKey);
+  if (typeof window !== "undefined") {
+    throw new Error("createServerSupabaseClient must only be used on the server");
+  }
+
+  if (!serverSupabaseClient) {
+    serverSupabaseClient = createClient<Database>(config.NEXT_PUBLIC_SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: {
+        persistSession: false,
+      },
+    });
+  }
+
+  return serverSupabaseClient;
+}
+
+/**
+ * Create a Supabase client with service role key for admin operations.
+ * Use this for operations that require elevated permissions (e.g., rate limiting).
+ */
+export function createServiceRoleSupabaseClient() {
+  return createClient<Database>(config.NEXT_PUBLIC_SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY);
 }
 

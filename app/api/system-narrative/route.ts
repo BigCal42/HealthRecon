@@ -1,10 +1,15 @@
-import { NextResponse } from "next/server";
+import { z } from "zod";
 
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
+import { parseJsonBody, validateQuery } from "@/lib/api/validate";
 import { getSystemNarrativeContext } from "@/lib/getSystemNarrativeContext";
-import { logger } from "@/lib/logger";
-import { createResponse, extractTextFromResponse } from "@/lib/openaiClient";
-import { rateLimit } from "@/lib/rateLimit";
+import { capPromptLength, createResponse, extractTextFromResponse } from "@/lib/openaiClient";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
+
+// Use Node.js runtime for OpenAI and Supabase integrations
+export const runtime = "nodejs";
 
 type SystemNarrativePayload = {
   headline: string;
@@ -17,16 +22,16 @@ type SystemNarrativePayload = {
 };
 
 export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const slug = searchParams.get("slug");
+  const ctx = createRequestContext("/api/system-narrative");
+  ctx.logInfo("System narrative fetch request received");
 
-    if (!slug) {
-      return NextResponse.json(
-        { error: "slug query parameter is required" },
-        { status: 400 },
-      );
-    }
+  try {
+    const getSchema = z.object({
+      slug: z.string().min(1).max(100),
+    });
+
+    const validated = validateQuery(request.url, getSchema);
+    const slug = validated.slug;
 
     const supabase = createServerSupabaseClient();
 
@@ -37,10 +42,7 @@ export async function GET(request: Request) {
       .maybeSingle<{ id: string }>();
 
     if (systemError || !system) {
-      return NextResponse.json(
-        { error: "system_not_found" },
-        { status: 404 },
-      );
+      return apiError(404, "system_not_found", "System not found");
     }
 
     const { data: narrative, error: narrativeError } = await supabase
@@ -57,47 +59,46 @@ export async function GET(request: Request) {
       }>();
 
     if (narrativeError) {
-      logger.error(narrativeError, "Failed to fetch system narrative");
-      return NextResponse.json(
-        { error: "fetch_failed" },
-        { status: 500 },
-      );
+      ctx.logError(narrativeError, "Failed to fetch system narrative", { systemId: system.id });
+      return apiError(500, "fetch_failed", "Failed to fetch system narrative");
     }
 
-    return NextResponse.json({ narrative: narrative ?? null });
+    ctx.logInfo("System narrative fetched successfully", { systemId: system.id, hasNarrative: !!narrative });
+    return apiSuccess({ narrative: narrative ?? null });
   } catch (error) {
-    logger.error(error, "System narrative fetch error");
-    return NextResponse.json(
-      { error: "unexpected_error" },
-      { status: 500 },
-    );
+    if (error instanceof Response) {
+      return error;
+    }
+    ctx.logError(error, "System narrative fetch error");
+    return apiError(500, "unexpected_error", "An unexpected error occurred");
   }
 }
 
 export async function POST(request: Request) {
+  const ctx = createRequestContext("/api/system-narrative");
+  ctx.logInfo("System narrative generation request received");
+
   const ip = request.headers.get("x-forwarded-for") ?? "unknown";
-  const ok = rateLimit({
-    key: `post:${ip}:${request.url}`,
+  const rateLimitResult = await checkRateLimit({
+    key: `system-narrative:${ip}`,
     limit: 5,
     windowMs: 60_000,
   });
 
-  if (!ok) {
-    logger.warn("Rate limit exceeded", { ip, url: request.url });
-    return new Response("Too Many Requests", { status: 429 });
+  if (!rateLimitResult.allowed) {
+    ctx.logError(new Error("Rate limit exceeded"), "Rate limit exceeded", { ip, resetAt: rateLimitResult.resetAt });
+    return apiError(429, "rate_limited", "Rate limit exceeded.");
   }
 
   try {
     const supabase = createServerSupabaseClient();
 
-    const body = (await request.json()) as { slug?: string; mode?: string };
+    const postSchema = z.object({
+      slug: z.string().min(1).max(100),
+      mode: z.literal("generate"),
+    });
 
-    if (!body.slug || body.mode !== "generate") {
-      return NextResponse.json(
-        { ok: false, error: "slug and mode='generate' are required" },
-        { status: 400 },
-      );
-    }
+    const body = await parseJsonBody(request, postSchema);
 
     const { data: system, error: systemError } = await supabase
       .from("systems")
@@ -113,10 +114,7 @@ export async function POST(request: Request) {
       }>();
 
     if (systemError || !system) {
-      return NextResponse.json(
-        { ok: false, error: "system_not_found" },
-        { status: 404 },
-      );
+      return apiError(404, "system_not_found", "System not found");
     }
 
     const context = await getSystemNarrativeContext(supabase, system.id);
@@ -190,7 +188,7 @@ export async function POST(request: Request) {
         `- [${action.action_category ?? "unknown"}] ${action.action_description ?? ""} - ${action.created_at ? new Date(action.created_at).toLocaleDateString() : "unknown date"}`,
     );
 
-    const prompt = [
+    const promptRaw = [
       "You are a healthcare strategy analyst. Produce a concise, structured narrative summarizing the state, trajectory, and strategic meaning of this health system. Capture both what is happening and why it matters for a healthcare IT services firm. Output valid JSON only.",
       `System: ${context.system.name}`,
       context.system.website ? `Website: ${context.system.website}` : "",
@@ -233,6 +231,8 @@ export async function POST(request: Request) {
       .filter(Boolean)
       .join("\n");
 
+    const prompt = capPromptLength(promptRaw);
+
     const response = await createResponse({
       prompt,
       format: "json_object",
@@ -242,10 +242,7 @@ export async function POST(request: Request) {
     const rawOutput = extractTextFromResponse(response);
 
     if (!rawOutput) {
-      return NextResponse.json(
-        { ok: false, error: "model_failure" },
-        { status: 502 },
-      );
+      return apiError(502, "generation_failed", "Model response missing");
     }
 
     let parsed: SystemNarrativePayload;
@@ -253,11 +250,8 @@ export async function POST(request: Request) {
     try {
       parsed = JSON.parse(rawOutput) as SystemNarrativePayload;
     } catch (error) {
-      logger.error(error, "Failed to parse model output", rawOutput);
-      return NextResponse.json(
-        { ok: false, error: "model_failure" },
-        { status: 502 },
-      );
+      ctx.logError(error, "Failed to parse model output", { rawOutput, systemId: system.id });
+      return apiError(502, "generation_failed", "Failed to parse model output");
     }
 
     // Validate structure
@@ -270,10 +264,7 @@ export async function POST(request: Request) {
       !Array.isArray(parsed.risks) ||
       !Array.isArray(parsed.momentum_signals)
     ) {
-      return NextResponse.json(
-        { ok: false, error: "model_failure" },
-        { status: 502 },
-      );
+      return apiError(502, "generation_failed", "Invalid response structure");
     }
 
     const { data: inserted, error: insertError } = await supabase
@@ -282,27 +273,22 @@ export async function POST(request: Request) {
         system_id: system.id,
         narrative: parsed,
       })
-      .select("*")
+      .select("id, system_id, narrative, created_at")
       .single();
 
     if (insertError || !inserted) {
-      logger.error(insertError, "Failed to store system narrative");
-      return NextResponse.json(
-        { ok: false, error: "storage_failed" },
-        { status: 500 },
-      );
+      ctx.logError(insertError, "Failed to store system narrative", { systemId: system.id });
+      return apiError(500, "generation_failed", "Failed to save system narrative");
     }
 
-    return NextResponse.json({
-      ok: true,
-      narrative: inserted,
-    });
+    ctx.logInfo("System narrative generated successfully", { systemId: system.id, narrativeId: inserted.id });
+    return apiSuccess({ narrative: inserted });
   } catch (error) {
-    logger.error(error, "System narrative generation error");
-    return NextResponse.json(
-      { ok: false, error: "unexpected_error" },
-      { status: 500 },
-    );
+    if (error instanceof Response) {
+      return error;
+    }
+    ctx.logError(error, "System narrative generation error");
+    return apiError(500, "generation_failed", "An unexpected error occurred");
   }
 }
 

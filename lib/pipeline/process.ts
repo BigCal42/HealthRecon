@@ -47,12 +47,19 @@ export async function runProcessForSystem(
     try {
       let processedSuccessfully = true;
 
+      // Cap raw_text to prevent excessive token usage (50k chars ~= 12k tokens)
+      const MAX_TEXT_LENGTH = 50_000;
+      const rawText = doc.raw_text ?? "";
+      const cappedText = rawText.length > MAX_TEXT_LENGTH 
+        ? rawText.substring(0, MAX_TEXT_LENGTH) + "\n\n[Content truncated...]"
+        : rawText;
+
       const prompt = [
         "You extract structured entities and signals about a healthcare system from a single webpage. Only return valid JSON matching the specified schema. Do not include any explanatory text.",
         "Extract entities and signals from the following document.",
         `Title: ${doc.title ?? ""}`,
         `URL: ${doc.source_url ?? ""}`,
-        doc.raw_text ?? "",
+        cappedText,
       ]
         .filter(Boolean)
         .join("\n\n");
@@ -73,34 +80,40 @@ export async function runProcessForSystem(
       const entities = parsed.entities ?? [];
       const signals = parsed.signals ?? [];
 
-      for (const entity of entities) {
-        const { error: entityError } = await supabase.from("entities").insert({
+      // Batch insert entities
+      if (entities.length > 0) {
+        const entityRows = entities.map((entity) => ({
           system_id: doc.system_id,
           type: entity.type,
           name: entity.name,
           role: entity.role ?? null,
           attributes: entity.attributes ?? null,
           source_document_id: doc.id,
-        });
+        }));
+
+        const { error: entityError } = await supabase.from("entities").insert(entityRows);
 
         if (entityError) {
-          logger.error(entityError, "Failed to insert entity");
+          logger.error(entityError, "Failed to insert entities", { count: entities.length });
           processedSuccessfully = false;
         }
       }
 
-      for (const signal of signals) {
-        const { error: signalError } = await supabase.from("signals").insert({
+      // Batch insert signals
+      if (signals.length > 0) {
+        const signalRows = signals.map((signal) => ({
           system_id: doc.system_id,
           document_id: doc.id,
           severity: signal.severity,
           category: signal.category,
           summary: signal.summary,
           details: signal.details ?? null,
-        });
+        }));
+
+        const { error: signalError } = await supabase.from("signals").insert(signalRows);
 
         if (signalError) {
-          logger.error(signalError, "Failed to insert signal");
+          logger.error(signalError, "Failed to insert signals", { count: signals.length });
           processedSuccessfully = false;
         }
       }
@@ -118,7 +131,7 @@ export async function runProcessForSystem(
         logger.error(updateError, "Failed to mark document processed");
       }
     } catch (err) {
-      logger.error(err, "Failed to process document", doc.id);
+      logger.error(err, "Failed to process document", { documentId: doc.id });
     }
   }
 

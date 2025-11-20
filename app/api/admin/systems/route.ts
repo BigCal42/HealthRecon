@@ -1,9 +1,14 @@
-import { NextResponse } from "next/server";
-
-import { logger } from "@/lib/logger";
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
+// Use Node.js runtime for Supabase integration
+export const runtime = "nodejs";
+
 export async function GET() {
+  const ctx = createRequestContext("/api/admin/systems");
+  ctx.logInfo("Admin systems fetch request received");
+
   try {
     const supabase = createServerSupabaseClient();
 
@@ -13,39 +18,36 @@ export async function GET() {
       .order("name", { ascending: true });
 
     if (error) {
-      logger.error(error, "Failed to fetch systems");
-      return NextResponse.json(
-        { error: "fetch_failed" },
-        { status: 500 },
-      );
+      ctx.logError(error, "Failed to fetch systems");
+      return apiError(500, "fetch_failed", "Failed to fetch systems");
     }
 
-    return NextResponse.json({ systems: systems ?? [] });
+    ctx.logInfo("Systems fetched successfully", { count: systems?.length ?? 0 });
+    return apiSuccess({ systems: systems ?? [] });
   } catch (error) {
-    logger.error(error, "Systems API error");
-    return NextResponse.json(
-      { error: "unexpected_error" },
-      { status: 500 },
-    );
+    ctx.logError(error, "Systems API error");
+    return apiError(500, "unexpected_error", "An unexpected error occurred");
   }
 }
 
-export async function POST(request: Request) {
-  try {
-    const body = (await request.json()) as {
-      slug: string;
-      name: string;
-      website?: string;
-      hqCity?: string;
-      hqState?: string;
-    };
+import { z } from "zod";
 
-    if (!body.slug || !body.name) {
-      return NextResponse.json(
-        { ok: false, error: "slug and name are required" },
-        { status: 400 },
-      );
-    }
+import { parseJsonBody } from "@/lib/api/validate";
+
+export async function POST(request: Request) {
+  const ctx = createRequestContext("/api/admin/systems");
+  ctx.logInfo("Admin system creation request received");
+
+  try {
+    const postSchema = z.object({
+      slug: z.string().min(1).max(100),
+      name: z.string().min(1).max(200),
+      website: z.string().url().max(500).optional(),
+      hqCity: z.string().max(100).optional(),
+      hqState: z.string().max(2).optional(),
+    });
+
+    const body = await parseJsonBody(request, postSchema);
 
     const supabase = createServerSupabaseClient();
 
@@ -58,29 +60,24 @@ export async function POST(request: Request) {
     });
 
     if (insertError) {
-      logger.error(insertError, "Failed to insert system");
+      ctx.logError(insertError, "Failed to insert system", { slug: body.slug });
       
       // Check for duplicate slug error
       if (insertError.code === "23505" || insertError.message.includes("unique")) {
-        return NextResponse.json(
-          { ok: false, error: "slug_already_exists" },
-          { status: 400 },
-        );
+        return apiError(400, "duplicate_slug", "Slug already exists");
       }
 
-      return NextResponse.json(
-        { ok: false, error: "insert_failed" },
-        { status: 500 },
-      );
+      return apiError(500, "insert_failed", "Failed to insert system");
     }
 
-    return NextResponse.json({ ok: true });
+    ctx.logInfo("System created successfully", { slug: body.slug });
+    return apiSuccess({});
   } catch (error) {
-    logger.error(error, "Systems API error");
-    return NextResponse.json(
-      { ok: false, error: "unexpected_error" },
-      { status: 500 },
-    );
+    if (error instanceof Response) {
+      return error;
+    }
+    ctx.logError(error, "Systems API error");
+    return apiError(500, "unexpected_error", "An unexpected error occurred");
   }
 }
 

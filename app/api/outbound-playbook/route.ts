@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { apiError, apiSuccess } from "@/lib/api/error";
@@ -7,6 +6,10 @@ import { parseJsonBody } from "@/lib/api/validate";
 import { getOutboundPlaybook, type OutboundPersona } from "@/lib/getOutboundPlaybook";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
+import { NextResponse } from "next/server";
+
+// Use Node.js runtime for Supabase integration
+export const runtime = "nodejs";
 
 const personaSchema = z.enum([
   "cio",

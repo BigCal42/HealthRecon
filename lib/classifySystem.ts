@@ -21,12 +21,18 @@ export async function classifySystem(
       .map((s) => `${s.slug}: ${s.name}`)
       .join("\n");
 
+    // Cap article text to prevent excessive token usage (20k chars ~= 5k tokens)
+    const MAX_TEXT_LENGTH = 20_000;
+    const cappedText = text.length > MAX_TEXT_LENGTH 
+      ? text.substring(0, MAX_TEXT_LENGTH) + "\n\n[Content truncated...]"
+      : text;
+
     const prompt = [
       "Given a news article text and a list of health systems, return the slug of the system the article most likely refers to. Return null if none. Only return valid JSON with a 'slug' field (string or null).",
       "Available systems:",
       systemsList,
       "Article text:",
-      text,
+      cappedText,
     ]
       .filter(Boolean)
       .join("\n\n");

@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
+import { parseJsonBody, validateQuery } from "@/lib/api/validate";
 import { getSignalActionContext } from "@/lib/getSignalActionContext";
-import { logger } from "@/lib/logger";
 import { createResponse, extractTextFromResponse } from "@/lib/openaiClient";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
+
+// Use Node.js runtime for OpenAI and Supabase integrations
+export const runtime = "nodejs";
 
 type ActionItem = {
   category: string;
@@ -16,26 +23,33 @@ type SignalActionsResponse = {
 };
 
 export async function POST(request: Request) {
+  const ctx = createRequestContext("/api/signal-actions");
+  ctx.logInfo("Signal actions generation request received");
+
+  const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+  const rateLimitResult = await checkRateLimit({
+    key: `signal-actions:${ip}`,
+    limit: 5,
+    windowMs: 60_000,
+  });
+
+  if (!rateLimitResult.allowed) {
+    ctx.logError(new Error("Rate limit exceeded"), "Rate limit exceeded", { ip, resetAt: rateLimitResult.resetAt });
+    return apiError(429, "rate_limited", "Rate limit exceeded.");
+  }
+
   try {
-    const body = (await request.json()) as {
-      slug?: string;
-      signalId?: string;
-      mode?: string;
-    };
 
-    if (!body.slug || !body.signalId) {
-      return NextResponse.json(
-        { ok: false, error: "slug and signalId are required" },
-        { status: 400 },
-      );
-    }
+    const signalActionsPostSchema = z.object({
+      slug: z.string().min(1).max(100),
+      signalId: z.string().uuid(),
+      mode: z.literal("generate"),
+    });
 
-    if (body.mode !== "generate") {
-      return NextResponse.json(
-        { ok: false, error: "mode must be 'generate'" },
-        { status: 400 },
-      );
-    }
+    const body = await parseJsonBody(request, signalActionsPostSchema);
+
+    // Extract signalId after validation to narrow type
+    const signalId = body.signalId;
 
     const supabase = createServerSupabaseClient();
 
@@ -46,13 +60,10 @@ export async function POST(request: Request) {
       .maybeSingle<{ id: string; slug: string; name: string }>();
 
     if (systemError || !system) {
-      return NextResponse.json(
-        { ok: false, error: "system_not_found" },
-        { status: 404 },
-      );
+      return apiError(404, "system_not_found", "System not found");
     }
 
-    const context = await getSignalActionContext(supabase, system.id, body.signalId);
+    const context = await getSignalActionContext(supabase, system.id, signalId);
 
     // Build compact model input
     const systemInfo = [
@@ -171,11 +182,8 @@ export async function POST(request: Request) {
     const rawOutput = extractTextFromResponse(response);
 
     if (!rawOutput) {
-      logger.error("Model response missing", { systemId: system.id, signalId: body.signalId });
-      return NextResponse.json(
-        { ok: false, error: "generation_failed" },
-        { status: 502 },
-      );
+      ctx.logError(new Error("Model response missing"), "Model response missing", { systemId: system.id, signalId });
+      return apiError(502, "generation_failed", "Failed to generate signal actions");
     }
 
     let parsed: SignalActionsResponse;
@@ -183,20 +191,14 @@ export async function POST(request: Request) {
     try {
       parsed = JSON.parse(rawOutput) as SignalActionsResponse;
     } catch (error) {
-      logger.error(error, "Failed to parse model output", rawOutput);
-      return NextResponse.json(
-        { ok: false, error: "generation_failed" },
-        { status: 502 },
-      );
+      ctx.logError(error, "Failed to parse model output", { rawOutput, systemId: system.id, signalId });
+      return apiError(502, "generation_failed", "Failed to parse model output");
     }
 
     // Validate structure
     if (!Array.isArray(parsed.actions)) {
-      logger.error("Invalid actions structure", parsed);
-      return NextResponse.json(
-        { ok: false, error: "generation_failed" },
-        { status: 502 },
-      );
+      ctx.logError(new Error("Invalid actions structure"), "Invalid actions structure", { parsed, systemId: system.id, signalId });
+      return apiError(502, "generation_failed", "Invalid response structure");
     }
 
     // Validate and insert each action
@@ -215,7 +217,7 @@ export async function POST(request: Request) {
         .from("signal_actions")
         .insert({
           system_id: system.id,
-          signal_id: body.signalId,
+          signal_id: signalId,
           action_category: action.category,
           action_description: action.description,
           confidence: action.confidence,
@@ -224,7 +226,7 @@ export async function POST(request: Request) {
         .single();
 
       if (error) {
-        logger.error(error, "Failed to insert signal action");
+        ctx.logError(error, "Failed to insert signal action", { systemId: system.id, signalId });
         return null;
       }
 
@@ -236,36 +238,40 @@ export async function POST(request: Request) {
     );
 
     if (insertedRows.length === 0) {
-      return NextResponse.json(
-        { ok: false, error: "generation_failed" },
-        { status: 502 },
-      );
+      ctx.logError(new Error("No valid actions generated"), "No valid actions generated", { systemId: system.id, signalId });
+      return apiError(502, "generation_failed", "No valid actions were generated");
     }
 
-    return NextResponse.json({
-      ok: true,
-      actions: insertedRows,
-    });
+    ctx.logInfo("Signal actions generated successfully", { systemId: system.id, signalId, count: insertedRows.length });
+    return apiSuccess({ actions: insertedRows });
   } catch (error) {
-    logger.error(error, "Signal actions generation error");
-    return NextResponse.json(
-      { ok: false, error: "generation_failed" },
-      { status: 500 },
-    );
+    if (error instanceof NextResponse) {
+      return error;
+    }
+    ctx.logError(error, "Signal actions generation error");
+    return apiError(500, "generation_failed", "An unexpected error occurred");
   }
 }
 
 export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const slug = searchParams.get("slug");
+  const ctx = createRequestContext("/api/signal-actions");
+  ctx.logInfo("Signal actions fetch request received");
 
-    if (!slug) {
-      return NextResponse.json(
-        { error: "slug query parameter is required" },
-        { status: 400 },
-      );
-    }
+  try {
+    const signalActionsGetSchema = z.object({
+      slug: z.string().min(1).max(100),
+      limit: z.string().transform((val) => parseInt(val, 10)).default("50"),
+      offset: z.string().transform((val) => parseInt(val, 10)).default("0"),
+    });
+
+    const validated = validateQuery(request.url, signalActionsGetSchema);
+    const slug = validated.slug;
+    const limit = validated.limit;
+    const offset = validated.offset;
+
+    // Enforce reasonable limits
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+    const safeOffset = Math.max(offset, 0);
 
     const supabase = createServerSupabaseClient();
 
@@ -276,33 +282,37 @@ export async function GET(request: Request) {
       .maybeSingle<{ id: string }>();
 
     if (systemError || !system) {
-      return NextResponse.json(
-        { error: "system_not_found" },
-        { status: 404 },
-      );
+      return apiError(404, "system_not_found", "System not found");
     }
 
-    const { data: items, error: itemsError } = await supabase
+    const { data: items, error: itemsError, count } = await supabase
       .from("signal_actions")
-      .select("*")
+      .select("id, system_id, signal_id, action_category, action_description, confidence, created_at", { count: "exact" })
       .eq("system_id", system.id)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .range(safeOffset, safeOffset + safeLimit - 1);
 
     if (itemsError) {
-      logger.error(itemsError, "Failed to fetch signal actions");
-      return NextResponse.json(
-        { error: "fetch_failed" },
-        { status: 500 },
-      );
+      ctx.logError(itemsError, "Failed to fetch signal actions", { slug, limit: safeLimit, offset: safeOffset });
+      return apiError(500, "fetch_failed", "Failed to fetch signal actions");
     }
 
-    return NextResponse.json({ signal_actions: items ?? [] });
+    ctx.logInfo("Signal actions fetched successfully", { slug, count: items?.length ?? 0 });
+    return apiSuccess({
+      signal_actions: items ?? [],
+      pagination: {
+        limit: safeLimit,
+        offset: safeOffset,
+        total: count ?? 0,
+        hasMore: (count ?? 0) > safeOffset + safeLimit,
+      },
+    });
   } catch (error) {
-    logger.error(error, "Signal actions fetch error");
-    return NextResponse.json(
-      { error: "unexpected_error" },
-      { status: 500 },
-    );
+    if (error instanceof NextResponse) {
+      return error;
+    }
+    ctx.logError(error, "Signal actions fetch error");
+    return apiError(500, "unexpected_error", "An unexpected error occurred");
   }
 }
 

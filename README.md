@@ -85,25 +85,27 @@ Data Flow:
    # populate each value before continuing
    ```
 4. **Provision Supabase schema**
-   Run each file inside `supabase/` via the Supabase SQL editor in this order:
-   - `schema.sql` (base tables: systems, documents, entities, signals)
-   - `daily_briefings.sql`
-   - `embeddings.sql`
-   - `feedback.sql`
-   - `news_sources.sql`
-   - `opportunities.sql`
-   - `opportunity_suggestions.sql`
-   - `outbound_playbooks.sql`
-   - `account_plans.sql`
-   - `run_logs.sql`
-   - `system_profiles.sql`
-   - `system_seeds.sql`
-   - `contacts.sql`
-   - `interactions.sql`
-   - `signal_actions.sql`
-   - `system_narratives.sql`
-   - `sales_briefings.sql`
-   - `add_performance_indexes.sql` (performance optimization - run last)
+   
+   **Option A: Via Supabase MCP (Recommended)**
+   - Migrations are automatically tracked and applied via Supabase MCP
+   - All migrations are in `supabase/migrations/` directory
+   - See `docs/SUPABASE_ENVIRONMENTS.md` for migration execution details
+   
+   **Option B: Via Supabase Dashboard**
+   - Go to Supabase project → SQL Editor
+   - Run migrations sequentially from `supabase/migrations/` directory:
+     - `20250101000001_initial_schema.sql`
+     - `20250101000002_enable_vector_extension.sql`
+     - `20250101000003_document_embeddings.sql`
+     - ... (continue through all 20 migrations in order)
+     - `20250101000020_enable_rls_policies.sql`
+   
+   **Option C: Via Supabase CLI**
+   ```bash
+   supabase db push
+   ```
+   
+   See `docs/SUPABASE_ENVIRONMENTS.md` for detailed migration instructions.
 5. **Start the dev server**
    ```bash
    npm run dev
@@ -114,14 +116,20 @@ Data Flow:
 ## Environment Variables
 All required keys live in `.env.local`. Copy from `.env.local.example` and supply real values.
 
+**Note:** All environment variables are validated at startup via Zod (`lib/config.ts`). The app will fail fast if required variables are missing.
+
 | Variable | Description | Required |
 | --- | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project REST URL (safe to expose to the browser). | Yes |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key for browser + server requests. | Yes |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service key for secure server-side helpers or scripts. | Yes |
-| `OPENAI_API_KEY` | Used for RAG chat, daily briefings, opportunity suggestions, and profiles. | Yes |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service key for secure server-side operations (rate limiting, admin operations). | Yes |
+| `OPENAI_API_KEY` | Used for RAG chat, daily briefings, opportunity suggestions, and profiles (app runtime). | Yes |
+| `OPENAI_ADMIN_KEY` | Used ONLY for Cursor MCP and local tooling scripts (NOT by deployed app). | Optional |
 | `FIRECRAWL_API_KEY` | Enables Firecrawl-powered ingestion for systems and news feeds. | Yes |
+| `FIRECRAWL_BASE_URL` | Firecrawl API base URL. Defaults to `https://api.firecrawl.dev`. | Optional |
 | `ADMIN_TOKEN` | Token for admin routes (`/admin/*`). Set a secure random string. | Optional (for admin features) |
+| `INTERNAL_API_KEY` | API key for internal routes (`ingest`, `pipeline`, `embed`). Set a secure random string. | Optional (for internal API protection) |
+| `NODE_ENV` | Node environment (`development`, `production`, `test`). Defaults to `development`. | Optional |
 
 ## Common Commands
 - `npm run dev` – Start the local Next.js dev server.
@@ -129,7 +137,13 @@ All required keys live in `.env.local`. Copy from `.env.local.example` and suppl
 - `npm run type-check` – TypeScript compiler in `--noEmit` mode.
 - `npm run test` – Run the Vitest unit suite once.
 - `npm run test:watch` – Run the Vitest suite in watch mode.
-- `npm run build` – Production build (used locally + by Vercel).
+- `npm run build` – Production build (used locally + by Vercel). **Note:** Requires all environment variables to be set.
+
+## Testing
+
+- **Unit tests:** Vitest suite for core utilities (`lib/api/error.test.ts`, `lib/api/validate.test.ts`, `lib/rateLimit.test.ts`, `lib/openaiClient.test.ts`)
+- **Test coverage:** Focus on critical paths (validation, error handling, rate limiting, OpenAI client)
+- **Mocking:** OpenAI client tests use mocked responses for reliability
 
 ## Code Style & Architecture
 
@@ -149,15 +163,45 @@ All required keys live in `.env.local`. Copy from `.env.local.example` and suppl
 
 ## Logging & Monitoring
 
-- Server logs use a small centralized logger (`lib/logger.ts`)
-- All major pipeline routes log errors clearly
+- Server logs use a centralized structured logger (`lib/logger.ts`) with log levels (debug, info, warn, error)
+- Structured JSON logging with request IDs for traceability
+- All major pipeline routes log errors clearly with context
 - `/api/log-test` can be used to verify logging in Vercel
 
 ## Rate Limiting
 
-- Expensive API routes use an in-memory token bucket
-- Prevents abuse and large OpenAI/Firecrawl bills
-- Limits reset automatically each window
+- **Distributed rate limiting** via Supabase `request_limits` table
+- Prevents abuse and large OpenAI/Firecrawl bills across multiple instances
+- Rate limits applied to critical routes: `chat`, `embed`, `ingest`, `pipeline`, `sales-briefing`, `compare`, `meeting-prep`, `account-plan`, `signal-actions`, `search`
+- Limits reset automatically each window (configurable per route)
+
+## API Standardization
+
+- **Standardized error responses:** All API routes use `apiError`/`apiSuccess` helpers from `lib/api/error.ts`
+- **Consistent response format:** `{ ok: boolean, data?: T, error?: { code: string, message: string } }`
+- **Input validation:** Zod schemas for request bodies and query parameters via `lib/api/validate.ts`
+- **Request size limits:** 1MB maximum request body size enforced
+
+## Security Enhancements
+
+- **Admin authentication:** Cookie-based auth with token expiration (24 hours)
+- **Internal API keys:** Sensitive routes (`ingest`, `pipeline`, `embed`) protected with `X-Internal-Api-Key` header
+- **Environment validation:** All environment variables validated at startup via Zod (`lib/config.ts`)
+- **RLS policies:** Row-level security enabled on all Supabase tables
+
+## OpenAI Client Resilience
+
+- **Retry logic:** Exponential backoff for retryable errors (5xx, 429, network issues)
+- **Timeouts:** Configurable timeouts (default 60s) with `AbortController`
+- **Structured logging:** Detailed logging of OpenAI interactions (duration, token usage, errors)
+- **High-level helpers:** `generateJson` and `embedText` simplify common use cases
+
+## Performance Optimizations
+
+- **Pagination:** List-returning routes (`signal-actions`, `contacts`, `interactions`, `opportunities`, `systems`) support `limit` and `offset`
+- **N+1 query fixes:** Batch inserts for entities and signals in processing pipeline
+- **Database indexes:** Performance indexes on all frequently queried columns
+- **Vector search:** Optimized pgvector queries for RAG functionality
 
 ## Deploying to Vercel
 1. Push your changes to `main` on GitHub (`https://github.com/BigCal42/HealthRecon`).
@@ -225,4 +269,65 @@ Once deployed, confirm `/systems/[slug]`, `/dashboard`, and `/compare` load succ
 - Health check: Visit `/health` to verify all services are configured
 - Database: Check Supabase logs for query errors
 - API: Check Vercel function logs for runtime errors
+
+## Supabase Setup Checklist
+
+### Prerequisites
+- ✅ Supabase account created
+- ✅ Supabase project created (dev environment)
+- ✅ Project URL and API keys obtained from Supabase dashboard
+
+### Environment Setup
+1. **Create `.env.local` file**
+   ```bash
+   cp .env.example .env.local
+   ```
+2. **Add Supabase credentials**
+   - Copy `NEXT_PUBLIC_SUPABASE_URL` from Supabase dashboard (Project Settings → API)
+   - Copy `NEXT_PUBLIC_SUPABASE_ANON_KEY` (anon public key)
+   - Copy `SUPABASE_SERVICE_ROLE_KEY` (service_role key, optional)
+3. **Add other required keys**
+   - `OPENAI_API_KEY` (required for app runtime)
+   - `OPENAI_ADMIN_KEY` (optional, for Cursor MCP and tooling only)
+   - `FIRECRAWL_API_KEY`
+   - `ADMIN_TOKEN` (optional)
+
+### Database Setup
+1. **Apply migrations**
+   - See "Provision Supabase schema" section above for migration options
+   - All migrations are in `supabase/migrations/` directory
+   - Migrations are numbered and should be applied sequentially
+2. **Verify schema**
+   - Check Supabase dashboard → Database → Tables (should see 19 tables)
+   - Check Extensions: `vector`, `pgcrypto`, `uuid-ossp`, `pg_stat_statements`
+   - Check RLS: All tables should have RLS enabled
+3. **Verify seed data**
+   - Check `systems` table has at least one row (BILH system)
+   - Check `news_sources` table has 3 rows
+   - Check `system_seeds` table has at least one row
+
+### Verification Steps
+1. **Test connection**
+   ```bash
+   npm run dev
+   ```
+   Visit `/health` - should show `supabase: "ok"`
+2. **Test database queries**
+   - Visit `/dashboard` - should load systems
+   - Visit `/systems/bilh` - should load system page
+3. **Check TypeScript types**
+   ```bash
+   npm run type-check
+   ```
+   Should pass without errors (types are generated from live schema)
+
+### For New Environments (Stage/Prod)
+1. Create new Supabase project
+2. Apply all migrations sequentially
+3. Copy seed data if needed
+4. Update environment variables in Vercel
+5. Verify schema alignment via Supabase dashboard or MCP
+
+See `docs/SUPABASE_ENVIRONMENTS.md` for detailed environment configuration.
+See `docs/SUPABASE_PLAN.md` for architecture and migration details.
 

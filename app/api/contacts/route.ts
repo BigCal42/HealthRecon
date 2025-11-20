@@ -1,19 +1,32 @@
-import { NextResponse } from "next/server";
+import { z } from "zod";
 
-import { logger } from "@/lib/logger";
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
+import { parseJsonBody, validateQuery } from "@/lib/api/validate";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
-export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const slug = searchParams.get("slug");
+// Use Node.js runtime for Supabase integration
+export const runtime = "nodejs";
 
-    if (!slug) {
-      return NextResponse.json(
-        { error: "slug query parameter is required" },
-        { status: 400 },
-      );
-    }
+export async function GET(request: Request) {
+  const ctx = createRequestContext("/api/contacts");
+  ctx.logInfo("Contacts fetch request received");
+
+  try {
+    const contactsGetSchema = z.object({
+      slug: z.string().min(1).max(100),
+      limit: z.string().transform((val) => parseInt(val, 10)).default("50"),
+      offset: z.string().transform((val) => parseInt(val, 10)).default("0"),
+    });
+
+    const validated = validateQuery(request.url, contactsGetSchema);
+    const slug = validated.slug;
+    const limit = validated.limit;
+    const offset = validated.offset;
+
+    // Enforce reasonable limits
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+    const safeOffset = Math.max(offset, 0);
 
     const supabase = createServerSupabaseClient();
 
@@ -24,59 +37,61 @@ export async function GET(request: Request) {
       .maybeSingle<{ id: string }>();
 
     if (systemError || !system) {
-      return NextResponse.json(
-        { error: "system_not_found" },
-        { status: 404 },
-      );
+      return apiError(404, "system_not_found", "System not found");
     }
 
-    const { data: contacts, error: contactsError } = await supabase
+    const { data: contacts, error: contactsError, count } = await supabase
       .from("contacts")
-      .select("*")
+      .select("*", { count: "exact" })
       .eq("system_id", system.id)
       .order("is_primary", { ascending: false })
       .order("seniority", { ascending: true })
-      .order("full_name", { ascending: true });
+      .order("full_name", { ascending: true })
+      .range(safeOffset, safeOffset + safeLimit - 1);
 
     if (contactsError) {
-      logger.error(contactsError, "Failed to fetch contacts");
-      return NextResponse.json(
-        { error: "fetch_failed" },
-        { status: 500 },
-      );
+      ctx.logError(contactsError, "Failed to fetch contacts", { slug, limit: safeLimit, offset: safeOffset });
+      return apiError(500, "fetch_failed", "Failed to fetch contacts");
     }
 
-    return NextResponse.json({ contacts: contacts ?? [] });
+    ctx.logInfo("Contacts fetched successfully", { slug, count: contacts?.length ?? 0 });
+    return apiSuccess({
+      contacts: contacts ?? [],
+      pagination: {
+        limit: safeLimit,
+        offset: safeOffset,
+        total: count ?? 0,
+        hasMore: (count ?? 0) > safeOffset + safeLimit,
+      },
+    });
   } catch (error) {
-    logger.error(error, "Contacts API error");
-    return NextResponse.json(
-      { error: "unexpected_error" },
-      { status: 500 },
-    );
+    if (error instanceof Response) {
+      return error;
+    }
+    ctx.logError(error, "Contacts API error");
+    return apiError(500, "unexpected_error", "An unexpected error occurred");
   }
 }
 
 export async function POST(request: Request) {
-  try {
-    const body = (await request.json()) as {
-      slug: string;
-      fullName: string;
-      title?: string;
-      department?: string;
-      email?: string;
-      phone?: string;
-      seniority?: string;
-      roleInDeal?: string;
-      notes?: string;
-      isPrimary?: boolean;
-    };
+  const ctx = createRequestContext("/api/contacts");
+  ctx.logInfo("Contact creation request received");
 
-    if (!body.slug || !body.fullName) {
-      return NextResponse.json(
-        { ok: false, error: "slug and fullName are required" },
-        { status: 400 },
-      );
-    }
+  try {
+    const postSchema = z.object({
+      slug: z.string().min(1).max(100),
+      fullName: z.string().min(1).max(200),
+      title: z.string().max(200).optional(),
+      department: z.string().max(200).optional(),
+      email: z.string().email().max(200).optional(),
+      phone: z.string().max(50).optional(),
+      seniority: z.enum(["executive", "director", "manager", "individual_contributor"]).optional(),
+      roleInDeal: z.string().max(100).optional(),
+      notes: z.string().max(2000).optional(),
+      isPrimary: z.boolean().optional(),
+    });
+
+    const body = await parseJsonBody(request, postSchema);
 
     const supabase = createServerSupabaseClient();
 
@@ -87,10 +102,7 @@ export async function POST(request: Request) {
       .maybeSingle<{ id: string }>();
 
     if (systemError || !system) {
-      return NextResponse.json(
-        { ok: false, error: "system_not_found" },
-        { status: 404 },
-      );
+      return apiError(404, "system_not_found", "System not found");
     }
 
     const { error: insertError } = await supabase.from("contacts").insert({
@@ -107,20 +119,18 @@ export async function POST(request: Request) {
     });
 
     if (insertError) {
-      logger.error(insertError, "Failed to insert contact");
-      return NextResponse.json(
-        { ok: false, error: "insert_failed" },
-        { status: 500 },
-      );
+      ctx.logError(insertError, "Failed to insert contact", { slug: body.slug, systemId: system.id });
+      return apiError(500, "insert_failed", "Failed to insert contact");
     }
 
-    return NextResponse.json({ ok: true });
+    ctx.logInfo("Contact created successfully", { slug: body.slug, systemId: system.id });
+    return apiSuccess({});
   } catch (error) {
-    logger.error(error, "Contacts API error");
-    return NextResponse.json(
-      { ok: false, error: "unexpected_error" },
-      { status: 500 },
-    );
+    if (error instanceof Response) {
+      return error;
+    }
+    ctx.logError(error, "Contacts API error");
+    return apiError(500, "unexpected_error", "An unexpected error occurred");
   }
 }
 

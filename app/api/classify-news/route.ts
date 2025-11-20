@@ -1,10 +1,15 @@
-import { NextResponse } from "next/server";
-
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
 import { classifySystem } from "@/lib/classifySystem";
-import { logger } from "@/lib/logger";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
+// Use Node.js runtime for Supabase integration
+export const runtime = "nodejs";
+
 export async function POST() {
+  const ctx = createRequestContext("/api/classify-news");
+  ctx.logInfo("Classify news request received");
+
   try {
     const supabase = createServerSupabaseClient();
 
@@ -16,12 +21,12 @@ export async function POST() {
       .eq("processed", true);
 
     if (error) {
-      logger.error(error, "Failed to load news documents");
-      return NextResponse.json({ classified: 0 });
+      ctx.logError(error, "Failed to load news documents");
+      return apiError(500, "fetch_failed", "Failed to load news documents");
     }
 
     if (!docs || docs.length === 0) {
-      return NextResponse.json({ classified: 0 });
+      return apiSuccess({ classified: 0 });
     }
 
     let classified = 0;
@@ -54,24 +59,22 @@ export async function POST() {
           .eq("id", doc.id);
 
         if (updateError) {
-          logger.error(updateError, "Failed to update document system_id", { documentId: doc.id });
+          ctx.logError(updateError, "Failed to update document system_id", { documentId: doc.id });
           continue;
         }
 
         classified++;
       } catch (error) {
-        logger.error(error, "Failed to classify document", { documentId: doc.id });
+        ctx.logError(error, "Failed to classify document", { documentId: doc.id });
         continue;
       }
     }
 
-    return NextResponse.json({ classified });
+    ctx.logInfo("News classification completed successfully", { classified });
+    return apiSuccess({ classified });
   } catch (error) {
-    logger.error(error, "Classification error");
-    return NextResponse.json(
-      { error: "Unexpected server error" },
-      { status: 500 },
-    );
+    ctx.logError(error, "Classification error");
+    return apiError(500, "classification_failed", "Unexpected server error");
   }
 }
 

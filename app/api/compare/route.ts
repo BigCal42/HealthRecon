@@ -1,24 +1,48 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
+import { validateQuery } from "@/lib/api/validate";
 import { compareSystems } from "@/lib/compareSystems";
 import { generateComparisonNarrative } from "@/lib/generateComparisonNarrative";
-import { logger } from "@/lib/logger";
 import { openai } from "@/lib/openaiClient";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
-export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const slugA = searchParams.get("slugA");
-    const slugB = searchParams.get("slugB");
-    const noNarrative = searchParams.get("noNarrative") === "1";
+// Use Node.js runtime for OpenAI and Supabase integrations
+export const runtime = "nodejs";
 
-    if (!slugA || !slugB) {
-      return NextResponse.json(
-        { error: "slugA and slugB query parameters are required" },
-        { status: 400 },
-      );
-    }
+export async function GET(request: Request) {
+  const ctx = createRequestContext("/api/compare");
+  ctx.logInfo("Compare systems request received");
+
+  const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+  const rateLimitResult = await checkRateLimit({
+    key: `compare:${ip}`,
+    limit: 10,
+    windowMs: 60_000,
+  });
+
+  if (!rateLimitResult.allowed) {
+    ctx.logError(new Error("Rate limit exceeded"), "Rate limit exceeded", { ip, resetAt: rateLimitResult.resetAt });
+    return apiError(429, "rate_limited", "Rate limit exceeded.");
+  }
+
+  let slugA: string | undefined;
+  let slugB: string | undefined;
+
+  try {
+    const compareSchema = z.object({
+      slugA: z.string().min(1).max(100),
+      slugB: z.string().min(1).max(100),
+      noNarrative: z.string().transform((val) => val === "1").default("0"),
+    });
+
+    const validated = validateQuery(request.url, compareSchema);
+    slugA = validated.slugA;
+    slugB = validated.slugB;
+    const noNarrative = validated.noNarrative;
 
     const supabase = createServerSupabaseClient();
 
@@ -38,17 +62,11 @@ export async function GET(request: Request) {
       ]);
 
     if (systemAError || !systemA) {
-      return NextResponse.json(
-        { error: "system_not_found", message: `System with slug "${slugA}" not found` },
-        { status: 404 },
-      );
+      return apiError(404, "system_not_found", `System with slug "${slugA}" not found`);
     }
 
     if (systemBError || !systemB) {
-      return NextResponse.json(
-        { error: "system_not_found", message: `System with slug "${slugB}" not found` },
-        { status: 404 },
-      );
+      return apiError(404, "system_not_found", `System with slug "${slugB}" not found`);
     }
 
     // Compare systems
@@ -59,21 +77,20 @@ export async function GET(request: Request) {
       try {
         comparison = await generateComparisonNarrative(openai, comparison);
       } catch (error) {
-        logger.error(error, "Failed to generate comparison narrative");
-        return NextResponse.json(
-          { error: "narrative_generation_failed", message: error instanceof Error ? error.message : "Unknown error" },
-          { status: 500 },
-        );
+        ctx.logError(error, "Failed to generate comparison narrative", { slugA, slugB });
+        const message = error instanceof Error ? error.message : "Unknown error";
+        return apiError(500, "narrative_generation_failed", message);
       }
     }
 
-    return NextResponse.json({ comparison });
+    ctx.logInfo("Systems compared successfully", { slugA, slugB });
+    return apiSuccess({ comparison });
   } catch (error) {
-    logger.error(error, "Compare API error");
-    return NextResponse.json(
-      { error: "unexpected_error", message: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 },
-    );
+    if (error instanceof NextResponse) {
+      return error;
+    }
+    ctx.logError(error, "Compare API error", { slugA: slugA ?? "unknown", slugB: slugB ?? "unknown" });
+    return apiError(500, "unexpected_error", "An unexpected error occurred");
   }
 }
 

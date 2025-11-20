@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 
-import { logger } from "@/lib/logger";
-import { openai } from "@/lib/openaiClient";
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
+import { validateInternalApiKey } from "@/lib/api/auth";
+import { embeddingToVectorString } from "@/lib/embeddings";
+import { embedText } from "@/lib/openaiClient";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
+
+// Use Node.js runtime for OpenAI and Supabase integrations
+export const runtime = "nodejs";
 
 type DocumentRow = {
   id: string;
@@ -15,8 +22,33 @@ type EmbeddingRow = {
   document_id: string;
 };
 
-export async function POST() {
+export async function POST(request: Request) {
+  const ctx = createRequestContext("/api/embed");
+  ctx.logInfo("Embedding request received");
+
   try {
+    // Validate internal API key
+    try {
+      validateInternalApiKey(request);
+    } catch (error) {
+      if (error instanceof NextResponse) {
+        return error;
+      }
+      throw error;
+    }
+
+    const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+    const rateLimitResult = await checkRateLimit({
+      key: `embed:${ip}`,
+      limit: 10,
+      windowMs: 60_000,
+    });
+
+    if (!rateLimitResult.allowed) {
+      ctx.logError(new Error("Rate limit exceeded"), "Rate limit exceeded", { ip, resetAt: rateLimitResult.resetAt });
+      return apiError(429, "rate_limited", "Rate limit exceeded.");
+    }
+
     const supabase = createServerSupabaseClient();
 
     const { data: docs, error } = await supabase
@@ -27,12 +59,12 @@ export async function POST() {
       .returns<DocumentRow[]>();
 
     if (error) {
-      logger.error(error, "Failed to load documents");
-      return NextResponse.json({ embedded: 0, error: "embedding_failed" });
+      ctx.logError(error, "Failed to load documents");
+      return apiError(500, "embedding_failed", "Failed to load documents");
     }
 
     if (!docs || docs.length === 0) {
-      return NextResponse.json({ embedded: 0 });
+      return apiSuccess({ embedded: 0 });
     }
 
     const { data: existing } = await supabase
@@ -44,35 +76,41 @@ export async function POST() {
     const docsToEmbed = (docs ?? []).filter((doc) => !embeddedIds.has(doc.id));
 
     if (docsToEmbed.length === 0) {
-      return NextResponse.json({ embedded: 0 });
+      return apiSuccess({ embedded: 0 });
     }
 
     const texts = docsToEmbed.map(
       (doc) => `${doc.title ?? ""}\n\n${doc.raw_text ?? ""}`,
     );
 
-    const response = await openai.embeddings.create({
-      model: "text-embedding-3-small",
+    const embeddings = await embedText({
       input: texts,
+      model: "text-embedding-3-small",
     });
 
-    for (let i = 0; i < docsToEmbed.length; i++) {
-      const { error: insertError } = await supabase
-        .from("document_embeddings")
-        .insert({
-          document_id: docsToEmbed[i].id,
-          embedding: response.data[i].embedding,
-        });
+    // Batch insert embeddings
+    const embeddingRows = docsToEmbed.map((doc, i) => ({
+      document_id: doc.id,
+      embedding: embeddingToVectorString(embeddings[i]),
+    }));
 
-      if (insertError) {
-        logger.error(insertError, "Failed to insert embedding", { documentId: docsToEmbed[i].id });
-      }
+    const { error: insertError } = await supabase
+      .from("document_embeddings")
+      .insert(embeddingRows);
+
+    if (insertError) {
+      ctx.logError(insertError, "Failed to insert embeddings", { count: embeddingRows.length });
+      // Continue anyway - partial success is acceptable
     }
 
-    return NextResponse.json({ embedded: docsToEmbed.length });
+    ctx.logInfo("Embeddings completed successfully", { embedded: docsToEmbed.length });
+    return apiSuccess({ embedded: docsToEmbed.length });
   } catch (error) {
-    logger.error(error, "Embedding error");
-    return NextResponse.json({ embedded: 0, error: "embedding_failed" });
+    if (error instanceof NextResponse) {
+      return error;
+    }
+    ctx.logError(error, "Embedding error");
+    return apiError(500, "embedding_failed", "An unexpected error occurred during embedding");
   }
 }
 

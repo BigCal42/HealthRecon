@@ -1,18 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { crawlUrl, type FirecrawlPage, type FirecrawlResponse } from "@/lib/firecrawlClient";
 import { hashText } from "@/lib/hash";
 import { logger } from "@/lib/logger";
-
-type FirecrawlPage = {
-  url: string;
-  title?: string;
-  content?: string;
-};
-
-type FirecrawlResponse = {
-  success: boolean;
-  pages?: FirecrawlPage[];
-};
 
 export async function runIngestForSystem(
   supabase: SupabaseClient,
@@ -39,31 +29,11 @@ export async function runIngestForSystem(
     throw new Error("No active seed URLs found for system");
   }
 
-  const apiKey = process.env.FIRECRAWL_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("Firecrawl API key is not configured");
-  }
-
   const created: string[] = [];
 
   for (const seed of seeds) {
     try {
-      const firecrawlRes = await fetch("https://api.firecrawl.dev/v1/crawl", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({ url: seed.url }),
-      });
-
-      if (!firecrawlRes.ok) {
-        logger.error(new Error(`Firecrawl request failed for ${seed.url}`));
-        continue;
-      }
-
-      const payload = (await firecrawlRes.json()) as FirecrawlResponse;
+      const payload = await crawlUrl(seed.url);
       const pages = payload.pages ?? [];
 
       if (!payload.success || pages.length === 0) {

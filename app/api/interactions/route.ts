@@ -1,19 +1,32 @@
-import { NextResponse } from "next/server";
+import { z } from "zod";
 
-import { logger } from "@/lib/logger";
+import { apiError, apiSuccess } from "@/lib/api/error";
+import { createRequestContext } from "@/lib/apiLogging";
+import { parseJsonBody, validateQuery } from "@/lib/api/validate";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 
-export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const slug = searchParams.get("slug");
+// Use Node.js runtime for Supabase integration
+export const runtime = "nodejs";
 
-    if (!slug) {
-      return NextResponse.json(
-        { error: "slug query parameter is required" },
-        { status: 400 },
-      );
-    }
+export async function GET(request: Request) {
+  const ctx = createRequestContext("/api/interactions");
+  ctx.logInfo("Interactions fetch request received");
+
+  try {
+    const interactionsGetSchema = z.object({
+      slug: z.string().min(1).max(100),
+      limit: z.string().transform((val) => parseInt(val, 10)).default("50"),
+      offset: z.string().transform((val) => parseInt(val, 10)).default("0"),
+    });
+
+    const validated = validateQuery(request.url, interactionsGetSchema);
+    const slug = validated.slug;
+    const limit = validated.limit;
+    const offset = validated.offset;
+
+    // Enforce reasonable limits
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+    const safeOffset = Math.max(offset, 0);
 
     const supabase = createServerSupabaseClient();
 
@@ -24,55 +37,56 @@ export async function GET(request: Request) {
       .maybeSingle<{ id: string }>();
 
     if (systemError || !system) {
-      return NextResponse.json(
-        { error: "system_not_found" },
-        { status: 404 },
-      );
+      return apiError(404, "system_not_found", "System not found");
     }
 
-    const { data: interactions, error: interactionsError } = await supabase
+    const { data: interactions, error: interactionsError, count } = await supabase
       .from("interactions")
-      .select("*")
+      .select("*", { count: "exact" })
       .eq("system_id", system.id)
       .order("occurred_at", { ascending: false })
-      .limit(50);
+      .range(safeOffset, safeOffset + safeLimit - 1);
 
     if (interactionsError) {
-      logger.error(interactionsError, "Failed to fetch interactions");
-      return NextResponse.json(
-        { error: "fetch_failed" },
-        { status: 500 },
-      );
+      ctx.logError(interactionsError, "Failed to fetch interactions", { slug, limit: safeLimit, offset: safeOffset });
+      return apiError(500, "fetch_failed", "Failed to fetch interactions");
     }
 
-    return NextResponse.json({ interactions: interactions ?? [] });
+    ctx.logInfo("Interactions fetched successfully", { slug, count: interactions?.length ?? 0 });
+    return apiSuccess({
+      interactions: interactions ?? [],
+      pagination: {
+        limit: safeLimit,
+        offset: safeOffset,
+        total: count ?? 0,
+        hasMore: (count ?? 0) > safeOffset + safeLimit,
+      },
+    });
   } catch (error) {
-    logger.error(error, "Interactions API error");
-    return NextResponse.json(
-      { error: "unexpected_error" },
-      { status: 500 },
-    );
+    if (error instanceof Response) {
+      return error;
+    }
+    ctx.logError(error, "Interactions API error");
+    return apiError(500, "unexpected_error", "An unexpected error occurred");
   }
 }
 
 export async function POST(request: Request) {
-  try {
-    const body = (await request.json()) as {
-      slug: string;
-      occurredAt?: string;
-      channel: string;
-      subject: string;
-      summary: string;
-      nextStep?: string;
-      nextStepDueAt?: string;
-    };
+  const ctx = createRequestContext("/api/interactions");
+  ctx.logInfo("Interaction creation request received");
 
-    if (!body.slug || !body.channel || !body.subject || !body.summary) {
-      return NextResponse.json(
-        { ok: false, error: "slug, channel, subject, and summary are required" },
-        { status: 400 },
-      );
-    }
+  try {
+    const postSchema = z.object({
+      slug: z.string().min(1).max(100),
+      occurredAt: z.string().datetime().optional(),
+      channel: z.string().min(1).max(50),
+      subject: z.string().min(1).max(500),
+      summary: z.string().min(1).max(5000),
+      nextStep: z.string().max(500).optional(),
+      nextStepDueAt: z.string().datetime().optional(),
+    });
+
+    const body = await parseJsonBody(request, postSchema);
 
     const supabase = createServerSupabaseClient();
 
@@ -83,10 +97,7 @@ export async function POST(request: Request) {
       .maybeSingle<{ id: string }>();
 
     if (systemError || !system) {
-      return NextResponse.json(
-        { ok: false, error: "system_not_found" },
-        { status: 404 },
-      );
+      return apiError(404, "system_not_found", "System not found");
     }
 
     const { error: insertError } = await supabase.from("interactions").insert({
@@ -104,20 +115,18 @@ export async function POST(request: Request) {
     });
 
     if (insertError) {
-      logger.error(insertError, "Failed to insert interaction");
-      return NextResponse.json(
-        { ok: false, error: "insert_failed" },
-        { status: 500 },
-      );
+      ctx.logError(insertError, "Failed to insert interaction", { slug: body.slug, systemId: system.id });
+      return apiError(500, "insert_failed", "Failed to insert interaction");
     }
 
-    return NextResponse.json({ ok: true });
+    ctx.logInfo("Interaction created successfully", { slug: body.slug, systemId: system.id });
+    return apiSuccess({});
   } catch (error) {
-    logger.error(error, "Interactions API error");
-    return NextResponse.json(
-      { ok: false, error: "unexpected_error" },
-      { status: 500 },
-    );
+    if (error instanceof Response) {
+      return error;
+    }
+    ctx.logError(error, "Interactions API error");
+    return apiError(500, "unexpected_error", "An unexpected error occurred");
   }
 }
 
