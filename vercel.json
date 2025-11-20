@@ -1,8 +1,2 @@
-{
-  "functions": {
-    "app/api/**": {
-      "runtime": "nodejs20.x"
-    }
-  }
-}
+{}
 
