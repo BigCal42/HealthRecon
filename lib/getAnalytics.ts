@@ -114,25 +114,16 @@ export async function getAnalytics(supabase?: SupabaseClient): Promise<Analytics
   const successfulRuns = briefingRuns?.filter((r) => r.status === "success").length ?? 0;
   const successRate = totalRuns > 0 ? (successfulRuns / totalRuns) * 100 : 0;
 
-  // Get rate limit statistics
-  const { data: rateLimits } = await client
-    .from("request_limits")
-    .select("key, count")
-    .returns<Array<{ key: string; count: number }>>();
+  // Get rate limit statistics using dedicated function
+  const { getRateLimitStats } = await import("./getRateLimitStats");
+  const rateLimitStats = await getRateLimitStats(client, 24);
 
-  const totalRequests = rateLimits?.reduce((sum, r) => sum + r.count, 0) ?? 0;
-
-  // Extract endpoints from rate limit keys (format: "endpoint:ip" or just "endpoint")
-  const endpointCounts = new Map<string, number>();
-  for (const rl of rateLimits ?? []) {
-    const endpoint = rl.key.split(":")[0];
-    endpointCounts.set(endpoint, (endpointCounts.get(endpoint) ?? 0) + rl.count);
-  }
-
-  const topEndpoints = Array.from(endpointCounts.entries())
-    .map(([endpoint, requests]) => ({ endpoint, requests }))
-    .sort((a, b) => b.requests - a.requests)
-    .slice(0, 10);
+  const totalRequests = rateLimitStats.totalRequests;
+  const rateLimitHits = rateLimitStats.rateLimitHits;
+  const topEndpoints = rateLimitStats.topEndpoints.map((ep) => ({
+    endpoint: ep.endpoint,
+    requests: ep.requests,
+  }));
 
   // Estimate OpenAI usage (rough estimate based on document and briefing counts)
   // This is a placeholder - actual usage would come from OpenAI API logs or tracking
@@ -172,7 +163,7 @@ export async function getAnalytics(supabase?: SupabaseClient): Promise<Analytics
     },
     rateLimits: {
       totalRequests,
-      rateLimitHits: 0, // Placeholder - would need to track rate limit rejections
+      rateLimitHits,
       topEndpoints,
     },
     errors: {

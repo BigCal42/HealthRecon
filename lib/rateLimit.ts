@@ -53,6 +53,13 @@ export async function checkRateLimit(params: {
   if (existing) {
     // Record exists, check if limit exceeded
     if (existing.count >= params.limit) {
+      // Log rate limit hit for monitoring
+      log("warn", "Rate limit exceeded", {
+        key: params.key,
+        count: existing.count,
+        limit: params.limit,
+        windowStart: windowStart.toISOString(),
+      });
       return {
         allowed: false,
         remaining: 0,

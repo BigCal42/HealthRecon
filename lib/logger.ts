@@ -89,13 +89,14 @@ export function log(
   level: LogLevel,
   message: string,
   context?: LogContext,
+  error?: Error,
 ): void {
   // Skip debug logs in production
   if (level === "debug" && process.env.NODE_ENV === "production") {
     return;
   }
 
-  const formatted = formatLogEntry(level, message, context);
+  const formatted = formatLogEntry(level, message, context, error);
 
   switch (level) {
     case "debug":
@@ -132,7 +133,7 @@ export const logger = {
   error: (err: unknown, message?: string, context?: LogContext): void => {
     const error = err instanceof Error ? err : new Error(String(err));
     const errorMessage = message ?? error.message;
-    log("error", errorMessage, context);
+    log("error", errorMessage, context, error);
   },
 };
 

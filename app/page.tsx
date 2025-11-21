@@ -38,7 +38,7 @@ async function safeGetHomeFocus(supabase: ReturnType<typeof createServerSupabase
   try {
     return await getHomeFocus(supabase);
   } catch (error) {
-    log("error", "Failed to load home focus items", { route: "/" }, error instanceof Error ? error : undefined);
+    log("error", "Failed to load home focus items", { route: "/", error: error instanceof Error ? error : undefined });
     return [];
   }
 }
@@ -47,7 +47,7 @@ async function safeGetHomeTopSystems(supabase: ReturnType<typeof createServerSup
   try {
     return await getHomeTopSystems(supabase);
   } catch (error) {
-    log("error", "Failed to load home top systems", { route: "/" }, error instanceof Error ? error : undefined);
+    log("error", "Failed to load home top systems", { route: "/", error: error instanceof Error ? error : undefined });
     return [];
   }
 }
@@ -56,7 +56,7 @@ async function safeGetHomeHeroBriefing(supabase: ReturnType<typeof createServerS
   try {
     return await getHomeHeroBriefing(supabase);
   } catch (error) {
-    log("error", "Failed to load home hero briefing", { route: "/" }, error instanceof Error ? error : undefined);
+    log("error", "Failed to load home hero briefing", { route: "/", error: error instanceof Error ? error : undefined });
     return null;
   }
 }
@@ -66,7 +66,7 @@ export default async function HomePage() {
   try {
     supabase = createServerSupabaseClient();
   } catch (error) {
-    log("error", "Failed to create Supabase client", { route: "/" }, error instanceof Error ? error : undefined);
+    log("error", "Failed to create Supabase client", { route: "/", error: error instanceof Error ? error : undefined });
     // Return error UI instead of throwing
     return (
       <PageShell>

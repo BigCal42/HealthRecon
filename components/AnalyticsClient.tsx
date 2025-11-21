@@ -143,7 +143,10 @@ export function AnalyticsClient({ initialData }: AnalyticsClientProps) {
               <strong>Total Requests:</strong> {data.rateLimits.totalRequests.toLocaleString()}
             </div>
             <div style={{ marginBottom: "0.5rem" }}>
-              <strong>Rate Limit Hits:</strong> {data.rateLimits.rateLimitHits}
+              <strong>Rate Limit Hits:</strong>{" "}
+              <span style={{ color: data.rateLimits.rateLimitHits > 0 ? "#f44336" : "#4caf50" }}>
+                {data.rateLimits.rateLimitHits}
+              </span>
             </div>
             {data.rateLimits.topEndpoints.length > 0 && (
               <div style={{ marginTop: "1rem", fontSize: "0.9rem", color: "#666" }}>
