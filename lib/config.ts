@@ -43,6 +43,8 @@ const envSchema = z.object({
 
 type EnvConfig = z.infer<typeof envSchema>;
 
+const isTestEnv = process.env.NODE_ENV === "test" || process.env.VITEST_WORKER_ID !== undefined;
+
 /**
  * Helper function to format environment variable errors with helpful context
  */
@@ -73,17 +75,17 @@ function formatEnvError(errors: z.ZodError["errors"]): string {
 
 function validateEnv(): EnvConfig {
   const rawEnv = {
-    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL || (isTestEnv ? "https://supabase.test" : undefined),
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || (isTestEnv ? "anon-test-key" : undefined),
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || (isTestEnv ? "service-role-test-key" : undefined),
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY || (isTestEnv ? "test-openai-key" : undefined),
     OPENAI_ADMIN_KEY: process.env.OPENAI_ADMIN_KEY,
-    FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY,
+    FIRECRAWL_API_KEY: process.env.FIRECRAWL_API_KEY || (isTestEnv ? "test-firecrawl-key" : undefined),
     FIRECRAWL_BASE_URL: process.env.FIRECRAWL_BASE_URL,
     ADMIN_TOKEN: process.env.ADMIN_TOKEN,
     INTERNAL_API_KEY: process.env.INTERNAL_API_KEY,
     CRON_SECRET: process.env.CRON_SECRET,
-    NODE_ENV: process.env.NODE_ENV,
+    NODE_ENV: process.env.NODE_ENV || (isTestEnv ? "test" : undefined),
     SENTRY_DSN: process.env.SENTRY_DSN,
   };
 

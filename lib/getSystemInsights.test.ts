@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { getSystemInsights } from "./getSystemInsights";
 
 function createMockSupabase(overrides: {
@@ -65,11 +65,13 @@ function createMockSupabase(overrides: {
         return {
           select: () => ({
             eq: () => ({
-              gte: () =>
-                Promise.resolve({
-                  data: signals,
+              gte: (_column: string, value: string) => {
+                const threshold = new Date(value);
+                return Promise.resolve({
+                  data: signals.filter((s) => new Date(s.created_at) >= threshold),
                   error: null,
-                }),
+                });
+              },
             }),
           }),
         };
@@ -78,11 +80,13 @@ function createMockSupabase(overrides: {
         return {
           select: () => ({
             eq: () => ({
-              gte: () =>
-                Promise.resolve({
-                  data: signalActions,
+              gte: (_column: string, value: string) => {
+                const threshold = new Date(value);
+                return Promise.resolve({
+                  data: signalActions.filter((s) => new Date(s.created_at) >= threshold),
                   error: null,
-                }),
+                });
+              },
             }),
           }),
         };
@@ -113,11 +117,13 @@ function createMockSupabase(overrides: {
         return {
           select: () => ({
             eq: () => ({
-              gte: () =>
-                Promise.resolve({
-                  data: interactions,
+              gte: (_column: string, value: string) => {
+                const threshold = new Date(value);
+                return Promise.resolve({
+                  data: interactions.filter((i) => new Date(i.occurred_at) >= threshold),
                   error: null,
-                }),
+                });
+              },
             }),
           }),
         };
@@ -132,6 +138,17 @@ function createMockSupabase(overrides: {
 }
 
 describe("getSystemInsights", () => {
+  const FIXED_NOW = new Date("2024-01-15T12:00:00Z");
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(FIXED_NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("returns null when system is not found", async () => {
     const supabase = createMockSupabase({
       system: null,
@@ -329,8 +346,8 @@ describe("getSystemInsights", () => {
         {
           id: "wi4",
           status: "done",
-          created_at: new Date("2023-12-01T00:00:00Z").toISOString(),
-          updated_at: new Date("2023-12-01T00:00:00Z").toISOString(),
+          created_at: new Date("2023-09-01T00:00:00Z").toISOString(),
+          updated_at: new Date("2023-09-01T00:00:00Z").toISOString(),
         },
         {
           id: "wi5",

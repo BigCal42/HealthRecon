@@ -5,6 +5,9 @@ import { getWorkItems, createWorkItemFromFocus } from "@/lib/worklist";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { createRequestContext } from "@/lib/apiLogging";
 
+const SYSTEM_ID = "11111111-1111-1111-1111-111111111111";
+const FOCUS_ID = "22222222-2222-2222-2222-222222222222";
+
 // Mock dependencies
 vi.mock("@/lib/worklist", () => ({
   getWorkItems: vi.fn(),
@@ -43,9 +46,9 @@ describe("/api/worklist", () => {
       const mockItems = [
         {
           id: "wi1",
-          system_id: "sys1",
+          system_id: SYSTEM_ID,
           source_type: "signal_action",
-          source_id: "sa1",
+          source_id: FOCUS_ID,
           title: "Follow up",
           description: "Check status",
           status: "open" as const,
@@ -137,9 +140,9 @@ describe("/api/worklist", () => {
     it("creates work item from focus item successfully", async () => {
       const mockWorkItem = {
         id: "wi1",
-        system_id: "sys1",
+        system_id: SYSTEM_ID,
         source_type: "signal_action",
-        source_id: "sa1",
+        source_id: FOCUS_ID,
         title: "Follow up",
         description: "Check status",
         status: "open",
@@ -158,9 +161,9 @@ describe("/api/worklist", () => {
         },
         body: JSON.stringify({
           fromFocusItem: {
-            id: "sa1",
+            id: FOCUS_ID,
             type: "signal_action",
-            systemId: "sys1",
+            systemId: SYSTEM_ID,
             title: "Follow up",
             description: "Check status",
           },
@@ -187,7 +190,7 @@ describe("/api/worklist", () => {
         body: JSON.stringify({
           fromFocusItem: {
             // Missing required fields
-            id: "sa1",
+            id: FOCUS_ID,
           },
         }),
       });
@@ -215,9 +218,9 @@ describe("/api/worklist", () => {
         },
         body: JSON.stringify({
           fromFocusItem: {
-            id: "sa1",
+            id: FOCUS_ID,
             type: "signal_action",
-            systemId: "sys1",
+            systemId: SYSTEM_ID,
             title: "Follow up",
           },
         }),
@@ -242,9 +245,9 @@ describe("/api/worklist", () => {
         },
         body: JSON.stringify({
           fromFocusItem: {
-            id: "sa1",
+            id: FOCUS_ID,
             type: "signal_action",
-            systemId: "sys1",
+            systemId: SYSTEM_ID,
             title: "Follow up",
           },
         }),

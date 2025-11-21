@@ -203,7 +203,7 @@ describe("getSystemTimeline", () => {
           title: "Opportunity 1",
           status: "open",
           created_at: day1.toISOString(),
-          updated_at: day2.toISOString(),
+          updated_at: day1.toISOString(),
         },
       ],
     });
