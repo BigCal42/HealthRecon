@@ -14,26 +14,26 @@ export function SystemActions({ slug }: SystemActionsProps) {
     setLoading(true);
     setStatus("Running...");
     try {
-      const res = await fetch("/api/pipeline", {
+      const res = await fetch(`/api/systems/${slug}/run-pipeline`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slug }),
       });
 
       const data = await res.json();
 
-      if (!res.ok) {
-        setStatus(`Error: ${data.error ?? "Pipeline failed"}`);
+      if (!res.ok || data.ok === false) {
+        setStatus(`Error: ${data.error?.message ?? "Pipeline failed"}`);
         return;
       }
 
-      const ingestCount = Array.isArray(data.ingest?.created)
-        ? data.ingest.created.length
-        : data.ingest?.created ?? 0;
-      const processedCount = data.process?.processed ?? 0;
+      const ingestCount = data.data?.ingest?.created ?? 0;
+      const processedCount = data.data?.process?.processed ?? 0;
+      const hasError = data.data?.error !== undefined;
 
       setStatus(
-        `Pipeline done: created ${ingestCount} docs, processed ${processedCount} docs`,
+        hasError
+          ? `Pipeline completed with errors: created ${ingestCount} docs, processed ${processedCount} docs`
+          : `Pipeline done: created ${ingestCount} docs, processed ${processedCount} docs`,
       );
     } catch (error) {
       setStatus(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -54,15 +54,15 @@ export function SystemActions({ slug }: SystemActionsProps) {
 
       const data = await res.json();
 
-      if (!res.ok) {
-        setStatus(`Error: ${data.error ?? "Briefing generation failed"}`);
+      if (!res.ok || data.ok === false) {
+        setStatus(`Error: ${data.error?.message ?? "Briefing generation failed"}`);
         return;
       }
 
-      if (data.created) {
-        setStatus(`Briefing created: true`);
+      if (data.data?.created) {
+        setStatus(`Briefing created successfully`);
       } else {
-        setStatus(`Briefing created: false (${data.reason ?? "unknown reason"})`);
+        setStatus(`Briefing not created (${data.data?.reason ?? "unknown reason"})`);
       }
     } catch (error) {
       setStatus(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -81,13 +81,13 @@ export function SystemActions({ slug }: SystemActionsProps) {
 
       const data = await res.json();
 
-      if (!res.ok) {
-        setStatus(`Error: ${data.error ?? "News ingest failed"}`);
+      if (!res.ok || data.ok === false) {
+        setStatus(`Error: ${data.error?.message ?? "News ingest failed"}`);
         return;
       }
 
       setStatus(
-        `News ingest done: ${data.documents_created ?? 0} documents created from ${data.sources ?? 0} sources`,
+        `News ingest done: ${data.data?.documents_created ?? 0} documents created from ${data.data?.sources ?? 0} sources`,
       );
     } catch (error) {
       setStatus(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -108,12 +108,12 @@ export function SystemActions({ slug }: SystemActionsProps) {
 
       const data = await res.json();
 
-      if (!res.ok || !data.ok) {
-        setStatus("Failed to generate profile.");
+      if (!res.ok || data.ok === false) {
+        setStatus(`Failed to generate profile: ${data.error?.message ?? "Unknown error"}`);
         return;
       }
 
-      setStatus("Profile generated.");
+      setStatus("Profile generated successfully.");
     } catch (error) {
       setStatus("Failed to generate profile.");
     } finally {
@@ -133,12 +133,12 @@ export function SystemActions({ slug }: SystemActionsProps) {
 
       const data = await res.json();
 
-      if (!res.ok || !data.ok) {
-        setStatus("Failed to generate playbook.");
+      if (!res.ok || data.ok === false) {
+        setStatus(`Failed to generate playbook: ${data.error?.message ?? "Unknown error"}`);
         return;
       }
 
-      setStatus("Outbound playbook generated.");
+      setStatus("Outbound playbook generated successfully.");
     } catch (error) {
       setStatus("Failed to generate playbook.");
     } finally {
@@ -158,12 +158,12 @@ export function SystemActions({ slug }: SystemActionsProps) {
 
       const data = await res.json();
 
-      if (!res.ok || !data.ok) {
-        setStatus("Failed to generate email draft.");
+      if (!res.ok || data.ok === false) {
+        setStatus(`Failed to generate email draft: ${data.error?.message ?? "Unknown error"}`);
         return;
       }
 
-      setStatus("Outbound email draft generated.");
+      setStatus("Outbound email draft generated successfully.");
     } catch (error) {
       setStatus("Failed to generate email draft.");
     } finally {
@@ -172,30 +172,53 @@ export function SystemActions({ slug }: SystemActionsProps) {
   };
 
   return (
-    <div style={{ marginTop: "2rem" }}>
-      <h2>Actions</h2>
-      <div style={{ marginBottom: "0.5rem" }}>
-        <button onClick={handleRunPipeline} disabled={loading} style={{ marginRight: "0.5rem" }}>
+    <div>
+      <div className="flex flex-wrap gap-2 mb-3">
+        <button
+          onClick={handleRunPipeline}
+          disabled={loading}
+          className="rounded-lg border border-border/40 bg-muted/20 px-3 py-1.5 text-sm font-medium transition-all hover:bg-muted/40 hover:border-border active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           Run Pipeline
         </button>
-        <button onClick={handleGenerateBriefing} disabled={loading} style={{ marginRight: "0.5rem" }}>
+        <button
+          onClick={handleGenerateBriefing}
+          disabled={loading}
+          className="rounded-lg border border-border/40 bg-muted/20 px-3 py-1.5 text-sm font-medium transition-all hover:bg-muted/40 hover:border-border active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           Generate Daily Briefing
         </button>
-        <button onClick={handleNewsIngest} disabled={loading} style={{ marginRight: "0.5rem" }}>
+        <button
+          onClick={handleNewsIngest}
+          disabled={loading}
+          className="rounded-lg border border-border/40 bg-muted/20 px-3 py-1.5 text-sm font-medium transition-all hover:bg-muted/40 hover:border-border active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           Run News Ingest
         </button>
-        <button onClick={generateProfile} disabled={loading} style={{ marginRight: "0.5rem" }}>
+        <button
+          onClick={generateProfile}
+          disabled={loading}
+          className="rounded-lg border border-border/40 bg-muted/20 px-3 py-1.5 text-sm font-medium transition-all hover:bg-muted/40 hover:border-border active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           Generate Profile
         </button>
-        <button onClick={generateOutboundPlaybook} disabled={loading} style={{ marginRight: "0.5rem" }}>
+        <button
+          onClick={generateOutboundPlaybook}
+          disabled={loading}
+          className="rounded-lg border border-border/40 bg-muted/20 px-3 py-1.5 text-sm font-medium transition-all hover:bg-muted/40 hover:border-border active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           Generate Outbound Playbook
         </button>
-        <button onClick={generateOutboundEmail} disabled={loading}>
+        <button
+          onClick={generateOutboundEmail}
+          disabled={loading}
+          className="rounded-lg border border-border/40 bg-muted/20 px-3 py-1.5 text-sm font-medium transition-all hover:bg-muted/40 hover:border-border active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           Generate Outbound Email
         </button>
       </div>
-      {loading && <p style={{ fontSize: "0.875rem", color: "#666" }}>Loading...</p>}
-      {!loading && <p style={{ fontSize: "0.875rem", color: "#666" }}>{status}</p>}
+      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {!loading && <p className="text-sm text-muted-foreground">{status}</p>}
     </div>
   );
 }

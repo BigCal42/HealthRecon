@@ -5,6 +5,7 @@ import type { EntityType } from "@/lib/types";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 import { UICopy } from "@/lib/uiCopy";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { SystemActions } from "@/components/SystemActions";
 import { SystemInteractions } from "@/components/SystemInteractions";
 import { SystemOpportunities } from "@/components/SystemOpportunities";
@@ -16,14 +17,19 @@ import { SystemContacts } from "@/components/SystemContacts";
 import { SystemTimeline } from "@/components/SystemTimeline";
 import { SystemSignalActions } from "@/components/SystemSignalActions";
 import { SystemNarrative } from "@/components/SystemNarrative";
+import { PipelineSection } from "@/components/PipelineSection";
 import { getSingleSystemHealthScore } from "@/lib/getSingleSystemHealthScore";
 import { PageShell } from "@/components/layout/PageShell";
+import { SectionCard } from "@/components/layout/SectionCard";
+import { getRecentPipelineRunsForSystem } from "@/lib/pipeline";
 
 type SystemRow = {
   id: string;
   slug: string;
   name: string;
   website: string | null;
+  hq_city: string | null;
+  hq_state: string | null;
 };
 
 type DocumentRow = {
@@ -110,24 +116,12 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
 
   const { data: system, error } = await supabase
     .from("systems")
-    .select("id, slug, name, website")
+    .select("id, slug, name, website, hq_city, hq_state")
     .eq("slug", slug)
     .maybeSingle<SystemRow>();
 
   if (error || !system) {
-    return (
-      <PageShell>
-        <h1>System not found</h1>
-        <p>
-          {error
-            ? "Unable to load system data."
-            : `The system "${slug}" does not exist.`}
-        </p>
-        <p className="text-muted-foreground">
-          Currently only the {BILH_SLUG.toUpperCase()} system is seeded.
-        </p>
-      </PageShell>
-    );
+    notFound();
   }
 
   const health = await getSingleSystemHealthScore(supabase, system.id);
@@ -145,7 +139,6 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
     { data: entitiesData },
     { data: signalsData, count: signalsTotal },
     { data: newsData },
-    { data: pipelineRunsData },
     { data: briefingRunsData },
     { data: feedbackData },
   ] = await Promise.all([
@@ -173,12 +166,6 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
       .order("crawled_at", { ascending: false })
       .limit(20),
     supabase
-      .from("pipeline_runs")
-      .select("*")
-      .eq("system_id", system.id)
-      .order("created_at", { ascending: false })
-      .limit(10),
-    supabase
       .from("daily_briefing_runs")
       .select("*")
       .eq("system_id", system.id)
@@ -196,9 +183,11 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
   const entities = (entitiesData ?? []) as EntityRow[];
   const signals = (signalsData ?? []) as SignalRow[];
   const news = (newsData ?? []) as DocumentRow[];
-  const pipelineRuns = (pipelineRunsData ?? []) as PipelineRunRow[];
   const briefingRuns = (briefingRunsData ?? []) as DailyBriefingRunRow[];
   const feedback = (feedbackData ?? []) as FeedbackRow[];
+
+  // Fetch pipeline runs using the helper function
+  const pipelineRuns = await getRecentPipelineRunsForSystem(supabase, system.id, 5);
 
   let parsedBriefing: { bullets?: unknown; narrative?: unknown } | null = null;
 
@@ -240,107 +229,210 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
     ? new Date(briefing.created_at).toISOString()
     : null;
 
+  // Generate initials for avatar badge
+  const initials = system.name
+    .split(" ")
+    .map((word) => word[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
+  // Format last updated date
+  const lastUpdated = lastDocumentAt || lastSignalAt || lastBriefingAt;
+  const lastUpdatedText = lastUpdated
+    ? new Date(lastUpdated).toLocaleDateString()
+    : "Never";
+
+  // Format location
+  const locationParts = [system.hq_city, system.hq_state].filter(Boolean);
+  const location = locationParts.length > 0 ? locationParts.join(", ") : null;
+
+  // Check if system has no data yet
+  const hasNoData = documentCount === 0 && signalCount === 0 && entityCount === 0;
+
   return (
     <PageShell>
-      <h1>{UICopy.systemSections.overview} – {system.name}</h1>
-      {system.website && (
-        <p className="mt-2">
-          <a
-            href={system.website}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-muted-foreground hover:text-foreground transition-colors"
-          >
-            {system.website}
-          </a>
-        </p>
+      {/* System Header */}
+      <div className="mb-6">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight">{system.name}</h1>
+            <p className="text-sm text-muted-foreground">
+              {system.slug}
+              {location && ` · ${location}`}
+              {system.website && (
+                <>
+                  {" · "}
+                  <a
+                    href={system.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-foreground transition-colors hover:underline"
+                  >
+                    Visit site
+                  </a>
+                </>
+              )}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
+            <span className="bg-muted/50 px-2 py-1 rounded">
+              <span className="font-medium text-foreground">{documentCount}</span> docs
+            </span>
+            <span className="bg-muted/50 px-2 py-1 rounded">
+              <span className="font-medium text-foreground">{signalCount}</span> signals
+            </span>
+            <span className="bg-muted/50 px-2 py-1 rounded">
+              <span className="font-medium text-foreground">{entityCount}</span> entities
+            </span>
+            {lastUpdated && (
+              <span className="text-xs">
+                Updated {lastUpdatedText}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Getting Started Callout */}
+      {hasNoData && (
+        <SectionCard className="mb-6 bg-muted/20">
+          <h2 className="text-sm font-semibold mb-2">Getting Started</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            This system has been seeded but no content has been ingested yet. To start collecting data:
+          </p>
+          <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
+            <li>
+              Visit the{" "}
+              <Link href={`/systems/${system.slug}/ingestion`} className="text-foreground hover:underline transition-colors">
+                Ingestion page
+              </Link>{" "}
+              to manage seed URLs and trigger the pipeline
+            </li>
+            <li>Run the ingestion pipeline to crawl seed URLs and extract documents</li>
+            <li>Documents will be processed to extract entities and signals</li>
+            <li>Return here to see the populated data</li>
+          </ol>
+        </SectionCard>
       )}
-      <nav className="mt-6 mb-8">
-        <ul className="flex flex-wrap gap-4 list-none p-0">
+
+      {/* Navigation */}
+      <nav className="mb-6 pb-4 border-b border-border/40">
+        <ul className="flex flex-wrap gap-3 list-none p-0">
           <li>
             <Link
               href={`/systems/${system.slug}/timeline`}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors hover:underline"
             >
               {UICopy.systemSections.timeline}
             </Link>
           </li>
           <li>
+            <span className="text-muted-foreground text-xs">•</span>
+          </li>
+          <li>
             <Link
               href={`/systems/${system.slug}/deals`}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors hover:underline"
             >
               {UICopy.systemSections.deals}
             </Link>
           </li>
           <li>
+            <span className="text-muted-foreground text-xs">•</span>
+          </li>
+          <li>
             <Link
               href={`/systems/${system.slug}/insights`}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors hover:underline"
             >
               {UICopy.systemSections.insights}
             </Link>
           </li>
           <li>
+            <span className="text-muted-foreground text-xs">•</span>
+          </li>
+          <li>
             <Link
               href={`/systems/${system.slug}/outbound-playbook`}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors hover:underline"
             >
               Outbound Playbook
             </Link>
           </li>
           <li>
+            <span className="text-muted-foreground text-xs">•</span>
+          </li>
+          <li>
             <Link
               href={`/systems/${system.slug}/strategy`}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors hover:underline"
             >
               Strategy Briefing
             </Link>
           </li>
           <li>
+            <span className="text-muted-foreground text-xs">•</span>
+          </li>
+          <li>
             <Link
               href={`/systems/${system.slug}/meeting-prep`}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors hover:underline"
             >
               Meeting Prep
             </Link>
           </li>
           <li>
+            <span className="text-muted-foreground text-xs">•</span>
+          </li>
+          <li>
             <Link
               href={`/systems/${system.slug}/account-plan`}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors hover:underline"
             >
               Account Plan
             </Link>
           </li>
           <li>
+            <span className="text-muted-foreground text-xs">•</span>
+          </li>
+          <li>
             <Link
               href={`/systems/${system.slug}/opportunities`}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors hover:underline"
             >
               Opportunities
             </Link>
           </li>
           <li>
+            <span className="text-muted-foreground text-xs">•</span>
+          </li>
+          <li>
             <Link
               href={`/systems/${system.slug}/chat`}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors hover:underline"
             >
               Chat
             </Link>
           </li>
           <li>
+            <span className="text-muted-foreground text-xs">•</span>
+          </li>
+          <li>
             <Link
               href={`/systems/${system.slug}/ingestion`}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors hover:underline"
             >
               Ingestion
             </Link>
           </li>
           <li>
+            <span className="text-muted-foreground text-xs">•</span>
+          </li>
+          <li>
             <Link
               href={`/demo?slug=${system.slug}`}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors hover:underline"
             >
               {UICopy.nav.heroDemo}
             </Link>
@@ -348,190 +440,24 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
         </ul>
       </nav>
 
-      <div className="grid gap-8">
-        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-          <h2 className="mb-4">System Health</h2>
-          {health ? (
-            <div>
-              <p className="mb-2">
-                <strong>Band:</strong> {health.band} |{" "}
-                <strong>Score:</strong> {health.overallScore}
-              </p>
-              <p className="mb-2">Components:</p>
-              <ul className="list-disc list-inside mb-4">
-                <li>Engagement: {health.components.engagementScore}</li>
-                <li>Opportunities: {health.components.opportunityScore}</li>
-                <li>Signals: {health.components.signalScore}</li>
-                <li>Risk: {health.components.riskScore}</li>
-              </ul>
-              {health.reasons.length > 0 && (
-                <>
-                  <p className="mb-2">Why:</p>
-                  <ul className="list-disc list-inside">
-                    {health.reasons.map((r, i) => (
-                      <li key={i}>{r}</li>
-                    ))}
-                  </ul>
-                </>
-              )}
-            </div>
-          ) : (
-            <p className="text-muted-foreground">No health score available.</p>
-          )}
-        </section>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Pipeline - Priority section */}
+        <SectionCard title="Pipeline" description="Recent pipeline runs" className="lg:col-span-2">
+          <PipelineSection
+            system={{ id: system.id, slug: system.slug, name: system.name }}
+            pipelineRuns={pipelineRuns}
+          />
+        </SectionCard>
 
-        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-          <h2 className="mb-4">System Overview</h2>
-          <ul className="space-y-1">
-            <li>Total documents: {documentCount}</li>
-            <li>Total entities: {entityCount}</li>
-            <li>Total signals: {signalCount}</li>
-            <li>Last document: {lastDocumentAt ?? "N/A"}</li>
-            <li>Last signal: {lastSignalAt ?? "N/A"}</li>
-            <li>Last briefing: {lastBriefingAt ?? "N/A"}</li>
-          </ul>
-        </section>
-
-        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-          <h2 className="mb-4">System Profile</h2>
-          <SystemProfile slug={system.slug} systemId={system.id} />
-        </section>
-
-        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-          <h2 className="mb-4">Account Plan</h2>
-          <p>
-            <Link
-              href={`/systems/${system.slug}/account-plan`}
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Open Account Plan workspace
-            </Link>
-          </p>
-        </section>
-
-        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-          <h2 className="mb-4">Living System Narrative</h2>
-          <SystemNarrative slug={system.slug} />
-        </section>
-
-        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-          <h2 className="mb-4">Key Contacts & Buying Committee</h2>
-          <SystemContacts slug={system.slug} />
-        </section>
-
-        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-          <h2 className="mb-4">Outbound Prep & Playbook</h2>
-          <SystemOutboundPrep slug={system.slug} />
-        </section>
-
-        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-          <h2 className="mb-4">Outbound Draft Composer</h2>
-          <SystemOutboundComposer slug={system.slug} />
-        </section>
-
-        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-          <h2 className="mb-4">News</h2>
-          {news.length === 0 ? (
-            <p className="text-muted-foreground">No news yet.</p>
-          ) : (
-            <ul className="space-y-2">
-              {news.map((n) => (
-                <li key={n.id} className="hover:bg-muted/50 transition-colors rounded-lg p-2 -mx-2">
-                  <a
-                    href={n.source_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="hover:text-foreground transition-colors"
-                  >
-                    {n.title ?? "Untitled"}
-                  </a>{" "}
-                  <span className="text-muted-foreground">
-                    – {n.crawled_at ? new Date(n.crawled_at).toLocaleString() : "Unknown"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <SystemActions slug={system.slug} />
-
-        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-          <h2 className="mb-4">Suggested Opportunities</h2>
-          <SystemOpportunitySuggestions slug={system.slug} />
-        </section>
-
-        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-          <h2 className="mb-4">Opportunities</h2>
-          <SystemOpportunities slug={system.slug} />
-        </section>
-
-        <SystemTimeline systemSlug={system.slug} />
-
-        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-          <h2 className="mb-4">Interaction Log</h2>
-          <SystemInteractions slug={system.slug} />
-        </section>
-
-        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-          <h2 className="mb-4">Run History</h2>
-          <h3 className="mb-3">Pipeline Runs</h3>
-          {pipelineRuns && pipelineRuns.length > 0 ? (
-            <ul className="space-y-2 mb-6">
-              {pipelineRuns.map((run) => (
-                <li key={run.id} className="text-sm">
-                  <span className="text-muted-foreground">
-                    [{run.created_at ? new Date(run.created_at).toLocaleString() : "Unknown"}]
-                  </span>{" "}
-                  {run.status} – ingest: {run.ingest_created}, process: {run.process_processed}
-                  {run.error_message && (
-                    <span className="text-muted-foreground"> – Error: {run.error_message}</span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-muted-foreground mb-6">No pipeline runs yet.</p>
-          )}
-          <h3 className="mb-3">Daily Briefing Runs</h3>
-          {briefingRuns && briefingRuns.length > 0 ? (
-            <ul className="space-y-2">
-              {briefingRuns.map((run) => (
-                <li key={run.id} className="text-sm">
-                  <span className="text-muted-foreground">
-                    [{run.created_at ? new Date(run.created_at).toLocaleString() : "Unknown"}]
-                  </span>{" "}
-                  {run.status}
-                  {run.error_message && (
-                    <span className="text-muted-foreground"> – Error: {run.error_message}</span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-muted-foreground">No daily briefing runs yet.</p>
-          )}
-        </section>
-
-        {briefingBullets && briefingNarrative && (
-          <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-            <h2 className="mb-4">Daily Briefing</h2>
-            <ul className="space-y-2 mb-4">
-              {briefingBullets.map((bullet, index) => (
-                <li key={`${index}-${bullet}`}>{bullet}</li>
-              ))}
-            </ul>
-            <p className="text-muted-foreground leading-relaxed">{briefingNarrative}</p>
-          </section>
-        )}
-
-        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-          <h2 className="mb-4">{UICopy.systemSections.signals}</h2>
+        {/* Signals - Priority section */}
+        <SectionCard title={UICopy.systemSections.signals} description="Recent signals and alerts">
           {signals.length === 0 ? (
-            <p className="text-muted-foreground">No signals yet</p>
+            <p className="text-sm text-muted-foreground">
+              No signals yet for this system. Run the pipeline to generate new signals.
+            </p>
           ) : (
             <>
-              <ul className="space-y-4">
+              <ul className="space-y-3 divide-y divide-border/20">
                 {signals.map((signal) => {
                   const documentRelation = Array.isArray(signal.documents)
                     ? signal.documents[0]
@@ -539,31 +465,26 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
                   const documentUrl = documentRelation?.source_url ?? null;
 
                   return (
-                    <li key={signal.id} className="border-b border-border/20 pb-4 last:border-0">
-                      <p className="mb-1">
-                        <strong>Severity:</strong> {signal.severity ?? "Unknown"}
-                      </p>
-                      <p className="mb-1">
-                        <strong>Category:</strong> {signal.category ?? "Unknown"}
-                      </p>
-                      <p className="mb-2">{signal.summary ?? "No summary provided."}</p>
-                      <p className="text-sm text-muted-foreground mb-2">
-                        Created: {signal.created_at ?? "Unknown"}
+                    <li key={signal.id} className="pt-3 first:pt-0 first:border-0">
+                      <div className="flex items-start gap-2 mb-1">
+                        <span className="text-xs font-medium text-muted-foreground">{signal.severity ?? "Unknown"}</span>
+                        <span className="text-xs text-muted-foreground">·</span>
+                        <span className="text-xs text-muted-foreground">{signal.category ?? "Unknown"}</span>
+                      </div>
+                      <p className="text-sm mb-2">{signal.summary ?? "No summary provided."}</p>
+                      <p className="text-xs text-muted-foreground mb-2">
+                        {signal.created_at ? new Date(signal.created_at).toLocaleDateString() : "Unknown"}
                       </p>
                       {documentUrl ? (
-                        <p>
-                          <a
-                            href={documentUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-muted-foreground hover:text-foreground transition-colors text-sm"
-                          >
-                            Source document
-                          </a>
-                        </p>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">No source document available.</p>
-                      )}
+                        <a
+                          href={documentUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-muted-foreground hover:text-foreground transition-colors hover:underline"
+                        >
+                          Source document →
+                        </a>
+                      ) : null}
                     </li>
                   );
                 })}
@@ -571,15 +492,15 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
               {(() => {
                 const signalsTotalPages = Math.max(1, Math.ceil((signalsTotal ?? 0) / pageSize));
                 return (
-                  <div className="mt-6 flex items-center gap-4">
-                    <p className="text-sm text-muted-foreground">
+                  <div className="mt-4 flex items-center gap-4">
+                    <p className="text-xs text-muted-foreground">
                       Page {sigPage} of {signalsTotalPages}
                     </p>
                     <div className="flex gap-2">
                       {sigPage > 1 && (
                         <Link
                           href={`?signals_page=${sigPage - 1}&documents_page=${docPage}`}
-                          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                          className="text-xs text-muted-foreground hover:text-foreground transition-colors hover:underline"
                         >
                           Previous
                         </Link>
@@ -587,7 +508,7 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
                       {sigPage < signalsTotalPages && (
                         <Link
                           href={`?signals_page=${sigPage + 1}&documents_page=${docPage}`}
-                          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                          className="text-xs text-muted-foreground hover:text-foreground transition-colors hover:underline"
                         >
                           Next
                         </Link>
@@ -598,29 +519,243 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
               })()}
             </>
           )}
-        </section>
+        </SectionCard>
 
-        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-          <h2 className="mb-4">Signal-Based Actions</h2>
-          <SystemSignalActions slug={system.slug} signals={signals} />
-        </section>
-
-        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-          <h2 className="mb-4">Entities</h2>
-          {!hasEntities ? (
-            <p className="text-muted-foreground">No entities yet</p>
+        {/* Documents - Priority section */}
+        <SectionCard title={UICopy.systemSections.documents} description="Ingested documents">
+          {documents.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No documents yet for this system. Run the pipeline to ingest documents.
+            </p>
           ) : (
-            <div className="space-y-6">
+            <>
+              <ul className="space-y-3 divide-y divide-border/20">
+                {documents.map((document) => (
+                  <li key={document.id} className="pt-3 first:pt-0 first:border-0">
+                    <p className="text-sm font-medium mb-1">{document.title ?? "Untitled"}</p>
+                    <a
+                      href={document.source_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors hover:underline break-all block mb-1"
+                    >
+                      {document.source_url}
+                    </a>
+                    <p className="text-xs text-muted-foreground">
+                      {document.crawled_at ? new Date(document.crawled_at).toLocaleDateString() : "Unknown"}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+              {(() => {
+                const documentsTotalPages = Math.max(1, Math.ceil((documentsTotal ?? 0) / pageSize));
+                return (
+                  <div className="mt-4 flex items-center gap-4">
+                    <p className="text-xs text-muted-foreground">
+                      Page {docPage} of {documentsTotalPages}
+                    </p>
+                    <div className="flex gap-2">
+                      {docPage > 1 && (
+                        <Link
+                          href={`?documents_page=${docPage - 1}&signals_page=${sigPage}`}
+                          className="text-xs text-muted-foreground hover:text-foreground transition-colors hover:underline"
+                        >
+                          Previous
+                        </Link>
+                      )}
+                      {docPage < documentsTotalPages && (
+                        <Link
+                          href={`?documents_page=${docPage + 1}&signals_page=${sigPage}`}
+                          className="text-xs text-muted-foreground hover:text-foreground transition-colors hover:underline"
+                        >
+                          Next
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </SectionCard>
+
+        {/* System Health */}
+        <SectionCard title="System Health" description="Health score and components">
+          {health ? (
+            <div className="space-y-3">
+              <div>
+                <span className="text-xs text-muted-foreground">Band: </span>
+                <span className="text-sm font-medium">{health.band}</span>
+                <span className="text-xs text-muted-foreground mx-2">·</span>
+                <span className="text-xs text-muted-foreground">Score: </span>
+                <span className="text-sm font-medium">{health.overallScore}</span>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Components:</p>
+                <ul className="space-y-1 text-xs">
+                  <li>Engagement: {health.components.engagementScore}</li>
+                  <li>Opportunities: {health.components.opportunityScore}</li>
+                  <li>Signals: {health.components.signalScore}</li>
+                  <li>Risk: {health.components.riskScore}</li>
+                </ul>
+              </div>
+              {health.reasons.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Why:</p>
+                  <ul className="space-y-1 text-xs text-muted-foreground">
+                    {health.reasons.map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No health score available.</p>
+          )}
+        </SectionCard>
+
+        {/* System Profile */}
+        <SectionCard title="System Profile" description="System details and information">
+          <SystemProfile slug={system.slug} systemId={system.id} />
+        </SectionCard>
+
+        {/* Account Plan */}
+        <SectionCard title="Account Plan" className="bg-muted/20">
+          <p className="text-sm">
+            <Link
+              href={`/systems/${system.slug}/account-plan`}
+              className="text-muted-foreground hover:text-foreground transition-colors hover:underline"
+            >
+              Open Account Plan workspace →
+            </Link>
+          </p>
+        </SectionCard>
+
+        {/* Living System Narrative */}
+        <SectionCard title="Living System Narrative" description="AI-generated narrative">
+          <SystemNarrative slug={system.slug} />
+        </SectionCard>
+
+        {/* Key Contacts */}
+        <SectionCard title="Key Contacts & Buying Committee" description="People and roles">
+          <SystemContacts slug={system.slug} />
+        </SectionCard>
+
+        {/* Outbound Prep */}
+        <SectionCard title="Outbound Prep & Playbook" description="Outbound strategy">
+          <SystemOutboundPrep slug={system.slug} />
+        </SectionCard>
+
+        {/* Outbound Composer */}
+        <SectionCard title="Outbound Draft Composer" description="Compose outbound messages">
+          <SystemOutboundComposer slug={system.slug} />
+        </SectionCard>
+
+        {/* News */}
+        <SectionCard title="News" description="Recent news articles">
+          {news.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No news yet.</p>
+          ) : (
+            <ul className="space-y-2 divide-y divide-border/20">
+              {news.map((n) => (
+                <li key={n.id} className="pt-2 first:pt-0 first:border-0 hover:bg-muted/50 transition-colors rounded-lg p-2 -mx-2">
+                  <a
+                    href={n.source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm hover:text-foreground transition-colors hover:underline"
+                  >
+                    {n.title ?? "Untitled"}
+                  </a>
+                  <span className="text-xs text-muted-foreground ml-2">
+                    {n.crawled_at ? new Date(n.crawled_at).toLocaleDateString() : "Unknown"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </SectionCard>
+
+        {/* System Actions */}
+        <SectionCard title="System Actions" description="Run pipelines and generate content" className="lg:col-span-2">
+          <SystemActions slug={system.slug} />
+        </SectionCard>
+
+        {/* Signal-Based Actions */}
+        <SectionCard title="Signal-Based Actions" description="Actions based on signals">
+          <SystemSignalActions slug={system.slug} signals={signals} />
+        </SectionCard>
+
+        {/* Suggested Opportunities */}
+        <SectionCard title="Suggested Opportunities" description="AI-suggested opportunities">
+          <SystemOpportunitySuggestions slug={system.slug} />
+        </SectionCard>
+
+        {/* Opportunities */}
+        <SectionCard title="Opportunities" description="Tracked opportunities">
+          <SystemOpportunities slug={system.slug} />
+        </SectionCard>
+
+        {/* Timeline */}
+        <SectionCard title="Recent Timeline" description="System activity timeline" className="lg:col-span-2">
+          <SystemTimeline systemSlug={system.slug} />
+        </SectionCard>
+
+        {/* Interaction Log */}
+        <SectionCard title="Interaction Log" description="Recent interactions">
+          <SystemInteractions slug={system.slug} />
+        </SectionCard>
+
+        {/* Daily Briefing Runs */}
+        <SectionCard title="Daily Briefing Runs" description="Briefing generation history">
+          {briefingRuns && briefingRuns.length > 0 ? (
+            <ul className="space-y-2 divide-y divide-border/20">
+              {briefingRuns.map((run) => (
+                <li key={run.id} className="pt-2 first:pt-0 first:border-0 text-sm">
+                  <span className="text-xs text-muted-foreground">
+                    {run.created_at ? new Date(run.created_at).toLocaleDateString() : "Unknown"}
+                  </span>
+                  <span className="ml-2">{run.status}</span>
+                  {run.error_message && (
+                    <span className="text-xs text-muted-foreground block mt-1">Error: {run.error_message}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">No daily briefing runs yet.</p>
+          )}
+        </SectionCard>
+
+        {/* Daily Briefing */}
+        {briefingBullets && briefingNarrative && (
+          <SectionCard title="Daily Briefing" description="Latest briefing summary" className="lg:col-span-2">
+            <ul className="space-y-2 mb-4 text-sm">
+              {briefingBullets.map((bullet, index) => (
+                <li key={`${index}-${bullet}`}>{bullet}</li>
+              ))}
+            </ul>
+            <p className="text-sm text-muted-foreground leading-relaxed">{briefingNarrative}</p>
+          </SectionCard>
+        )}
+
+        {/* Entities */}
+        <SectionCard title="Entities" description="People, facilities, initiatives, vendors, technologies">
+          {!hasEntities ? (
+            <p className="text-sm text-muted-foreground">No entities yet for this system. Run the pipeline to extract entities.</p>
+          ) : (
+            <div className="space-y-4">
               {ENTITY_SECTIONS.map((section) => {
                 const sectionEntities = groupedEntities[section.key] ?? [];
 
                 return (
                   <div key={section.key}>
-                    <h3 className="mb-2">{section.heading}</h3>
+                    <h3 className="text-xs font-semibold mb-2">{section.heading}</h3>
                     {sectionEntities.length === 0 ? (
-                      <p className="text-muted-foreground">No {section.heading.toLowerCase()} found.</p>
+                      <p className="text-xs text-muted-foreground">No {section.heading.toLowerCase()} found.</p>
                     ) : (
-                      <ul className="space-y-1">
+                      <ul className="space-y-1 text-sm">
                         {sectionEntities.map((entity) => (
                           <li key={entity.id}>
                             <span>{entity.name}</span>
@@ -636,84 +771,26 @@ export default async function SystemPage({ params, searchParams }: SystemPagePro
               })}
             </div>
           )}
-        </section>
+        </SectionCard>
 
-        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-          <h2 className="mb-4">{UICopy.systemSections.documents}</h2>
-          {documents.length === 0 ? (
-            <p className="text-muted-foreground">No documents yet</p>
-          ) : (
-            <>
-              <ul className="space-y-4">
-                {documents.map((document) => (
-                  <li key={document.id} className="border-b border-border/20 pb-4 last:border-0">
-                    <p className="mb-2">{document.title ?? "Untitled"}</p>
-                    <p className="mb-2">
-                      <a
-                        href={document.source_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-muted-foreground hover:text-foreground transition-colors text-sm break-all"
-                      >
-                        {document.source_url}
-                      </a>
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Crawled: {document.crawled_at ?? "Unknown"}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-              {(() => {
-                const documentsTotalPages = Math.max(1, Math.ceil((documentsTotal ?? 0) / pageSize));
-                return (
-                  <div className="mt-6 flex items-center gap-4">
-                    <p className="text-sm text-muted-foreground">
-                      Page {docPage} of {documentsTotalPages}
-                    </p>
-                    <div className="flex gap-2">
-                      {docPage > 1 && (
-                        <Link
-                          href={`?documents_page=${docPage - 1}&signals_page=${sigPage}`}
-                          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          Previous
-                        </Link>
-                      )}
-                      {docPage < documentsTotalPages && (
-                        <Link
-                          href={`?documents_page=${docPage + 1}&signals_page=${sigPage}`}
-                          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                          Next
-                        </Link>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-            </>
-          )}
-        </section>
-
-        <section className="border border-border/40 rounded-xl p-6 bg-muted/20">
-          <h2 className="mb-4">Recent Feedback</h2>
+        {/* Recent Feedback */}
+        <SectionCard title="Recent Feedback" className="bg-muted/20">
           {feedback && feedback.length > 0 ? (
-            <ul className="space-y-2">
+            <ul className="space-y-2 divide-y divide-border/20">
               {feedback.map((f) => (
-                <li key={f.id} className="text-sm">
-                  <span className="text-muted-foreground">
-                    [{f.created_at ? new Date(f.created_at).toLocaleString() : "Unknown"}]
-                  </span>{" "}
-                  {f.kind} – {f.sentiment}
-                  {f.comment && <span className="text-muted-foreground"> – {f.comment}</span>}
+                <li key={f.id} className="pt-2 first:pt-0 first:border-0 text-sm">
+                  <span className="text-xs text-muted-foreground">
+                    {f.created_at ? new Date(f.created_at).toLocaleDateString() : "Unknown"}
+                  </span>
+                  <span className="ml-2">{f.kind} – {f.sentiment}</span>
+                  {f.comment && <span className="text-xs text-muted-foreground block mt-1">{f.comment}</span>}
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-muted-foreground">No feedback yet.</p>
+            <p className="text-sm text-muted-foreground">No feedback yet.</p>
           )}
-        </section>
+        </SectionCard>
       </div>
     </PageShell>
   );

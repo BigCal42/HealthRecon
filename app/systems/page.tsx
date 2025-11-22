@@ -45,7 +45,24 @@ export default async function SystemsPortfolioPage() {
       <Nav />
 
       {portfolio.items.length === 0 ? (
-        <p className="text-muted-foreground">No systems configured. Add systems directly in Supabase for now.</p>
+        <div className="border border-border/40 rounded-xl bg-muted/20 px-6 py-8">
+          <h2 className="text-xl font-semibold mb-2">No systems configured</h2>
+          <p className="text-muted-foreground mb-4">
+            To get started, seed the BILH (Beth Israel Lahey Health) system:
+          </p>
+          <ol className="list-decimal list-inside space-y-2 text-muted-foreground mb-4">
+            <li>Ensure <code className="bg-background px-1 rounded">NEXT_PUBLIC_SUPABASE_URL</code> and <code className="bg-background px-1 rounded">SUPABASE_SERVICE_ROLE_KEY</code> are set in your environment</li>
+            <li>Run <code className="bg-background px-1 rounded">npm run seed:bilh</code></li>
+            <li>Refresh this page to see the system</li>
+          </ol>
+          <p className="text-sm text-muted-foreground">
+            For detailed instructions, see{" "}
+            <a href="/docs/SEED_BILH.md" className="text-foreground hover:underline">
+              docs/SEED_BILH.md
+            </a>
+            .
+          </p>
+        </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">

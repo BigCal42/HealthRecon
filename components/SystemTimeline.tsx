@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabaseClient";
 import { getSystemTimeline } from "@/lib/getSystemTimeline";
 
@@ -13,25 +14,31 @@ export async function SystemTimeline({ systemSlug }: SystemTimelineProps) {
   });
 
   if (!timeline || timeline.items.length === 0) {
-    return null;
+    return <p className="text-sm text-muted-foreground">No timeline items yet.</p>;
   }
 
   return (
-    <section style={{ marginTop: "2rem" }}>
-      <h2>Recent Timeline</h2>
-      <ul>
+    <>
+      <ul className="space-y-2 divide-y divide-border/20">
         {timeline.items.map((item) => (
-          <li key={`${item.type}-${item.id}-${item.occurredAt}`}>
-            <p>
-              <strong>[{item.type}]</strong> {item.occurredAt} – {item.title}
+          <li key={`${item.type}-${item.id}-${item.occurredAt}`} className="pt-2 first:pt-0 first:border-0">
+            <p className="text-sm">
+              <span className="text-xs text-muted-foreground font-medium">[{item.type}]</span>{" "}
+              <span className="text-xs text-muted-foreground">{item.occurredAt}</span>{" "}
+              <span className="text-sm">{item.title}</span>
             </p>
           </li>
         ))}
       </ul>
-      <p>
-        <a href={`/systems/${timeline.slug}/timeline`}>View full timeline</a>
+      <p className="mt-4">
+        <Link
+          href={`/systems/${timeline.slug}/timeline`}
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors hover:underline"
+        >
+          View full timeline →
+        </Link>
       </p>
-    </section>
+    </>
   );
 }
 
