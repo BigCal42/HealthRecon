@@ -113,6 +113,39 @@ Data Flow:
 6. **Open the app**
    Visit [http://localhost:3000](http://localhost:3000) and explore `/systems/[slug]`, `/dashboard`, `/compare`, and `/admin/systems`.
 
+### Quickstart: Bootstrap BILH
+
+To get started with a single live account (BILH - Beth Israel Lahey Health), follow these steps:
+
+1. **Ensure environment variables are set**
+   - `NEXT_PUBLIC_SUPABASE_URL` - Your Supabase project URL
+   - `SUPABASE_SERVICE_ROLE_KEY` - Your Supabase service role key (required for seeding)
+
+2. **Run the BILH seed script**
+   ```bash
+   npm run seed:bilh
+   ```
+   
+   This script will:
+   - Create or update a `systems` row with slug `bilh` (name: "Beth Israel Lahey Health", website: `https://bilh.org/`)
+   - Create a `system_seeds` row pointing to `https://bilh.org/` for crawling
+   - The script is idempotent (safe to run multiple times)
+
+3. **Verify the system was created**
+   - Visit [http://localhost:3000/systems](http://localhost:3000/systems) - you should see BILH listed
+   - Visit [http://localhost:3000/systems/bilh](http://localhost:3000/systems/bilh) - you should see the system overview page
+
+4. **Trigger ingestion** (optional)
+   - Navigate to `/systems/bilh` and use the pipeline controls to trigger ingestion
+   - Or visit `/systems/bilh/ingestion` to manage seeds and run the pipeline
+
+For detailed information, see [docs/SEED_BILH.md](docs/SEED_BILH.md).
+
+**Schema Reference:**
+- `systems` table: See `supabase/migrations/20250101000001_initial_schema.sql` for the full schema
+- `system_seeds` table: See `supabase/migrations/20250101000015_system_seeds.sql` for the full schema
+- TypeScript types: Generated types are available in `lib/supabase.types.ts`
+
 ## Environment Variables
 All required keys live in `.env.local`. Copy from `.env.local.example` and supply real values.
 

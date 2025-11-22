@@ -1,0 +1,53 @@
+### BILH Smoke Test API Calls
+### Use with REST Client extension or similar HTTP client
+
+@baseUrl = http://localhost:3000
+@systemSlug = bilh
+
+### Health Check
+GET {{baseUrl}}/api/health
+
+### Chat API
+POST {{baseUrl}}/api/chat
+Content-Type: application/json
+
+{
+  "systemSlug": "{{systemSlug}}",
+  "question": "What can you tell me about Beth Israel Lahey Health from the ingested data?"
+}
+
+### Meeting Prep API
+POST {{baseUrl}}/api/meeting-prep
+Content-Type: application/json
+
+{
+  "systemSlug": "{{systemSlug}}",
+  "meetingType": "discovery",
+  "audienceDescription": "CIO and VP Applications",
+  "myObjective": "Understand their cloud and EHR roadmap",
+  "timeBoxMinutes": 60
+}
+
+### Strategy Briefing API
+POST {{baseUrl}}/api/strategy-briefing
+Content-Type: application/json
+
+{
+  "systemSlug": "{{systemSlug}}",
+  "horizonMonths": 12
+}
+
+### Daily Briefing API
+POST {{baseUrl}}/api/daily-briefing
+Content-Type: application/json
+
+{
+  "slug": "{{systemSlug}}"
+}
+
+### Account Plan GET
+GET {{baseUrl}}/api/account-plan?systemSlug={{systemSlug}}
+
+### Run Pipeline
+POST {{baseUrl}}/api/systems/{{systemSlug}}/run-pipeline
+
